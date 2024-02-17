@@ -15,13 +15,9 @@ type client struct {
 // func (cl *client) start() {}
 
 type clientTransport struct {
-	protocol      *clientProtocol
-	src_udpaddr   *net.UDPAddr
-	mcast_udpaddr *net.UDPAddr
-	sock          *net.UDPConn
-	mcast_ttl     int16
-	dport         string
-	aport         string
+	protocol *clientProtocol
+	mConn    *net.UDPConn
+	uConn    *net.UDPConn
 
 	tx_ctx_list map[int32]*client
 }
@@ -33,7 +29,7 @@ func (tp *clientTransport) initSend(data []byte) {
 
 // function which sends multicast messages
 func (tp *clientTransport) sendCast(data []byte) {
-	tp.sock.Write(data)
+	tp.mConn.Write(data)
 }
 
 // listen for ack
@@ -42,7 +38,7 @@ func (tp *clientTransport) listenForAck() {
 
 	buf := make([]byte, 1024)
 	for {
-		n, srcAddr, err := tp.sock.ReadFromUDP(buf)
+		n, srcAddr, err := tp.uConn.ReadFromUDP(buf)
 		if err != nil {
 			fmt.Printf("Error reading from UDP connection: %v\n", err)
 			continue
@@ -63,35 +59,35 @@ func createClientTransport() (t *clientTransport) {
 	// create client transport
 	// client will send multicast messages over dport and
 	// wait for unicast acks over aport
-	groupAddr, err := net.ResolveUDPAddr("udp4", net.JoinHostPort(mcast_ipaddr, dport))
+	groupAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", mcast_ipaddr, dport))
 	if err != nil {
 		log.Fatal(err)
 		os.Exit(1)
 	}
 
 	// get Interface ip
-	_, interfaceIp := getInterface()
-	fmt.Println(interfaceIp)
-	ifaceAddr, err := net.ResolveUDPAddr("udp4", fmt.Sprintf(":%s", aport))
+	unicastAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf(":%d", aport))
 	if err != nil {
 		log.Fatal(err)
 		os.Exit(1)
 	}
 
 	// create UDP connection
-	conn, err := net.DialUDP("udp", ifaceAddr, groupAddr)
+	multicastConn, err := net.DialUDP("udp", &net.UDPAddr{IP: net.ParseIP(src_ipaddr)}, groupAddr)
+	if err != nil {
+		log.Fatal(err)
+		os.Exit(1)
+	}
+
+	unicastConnection, err := net.ListenUDP("udp", unicastAddr)
 	if err != nil {
 		log.Fatal(err)
 		os.Exit(1)
 	}
 
 	t = &clientTransport{
-		mcast_ttl:     mcast_ttl,
-		dport:         dport,
-		aport:         aport,
-		mcast_udpaddr: groupAddr,
-		sock:          conn,
-		src_udpaddr:   ifaceAddr,
+		mConn: multicastConn,
+		uConn: unicastConnection,
 	}
 
 	// listen for ack from servers in the background

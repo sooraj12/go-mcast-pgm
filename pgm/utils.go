@@ -6,7 +6,7 @@ import (
 	"os"
 )
 
-func getInterface() (ifaceInfo *net.Interface, ipaddr string) {
+func getInterface(ipaddr string) (ifaceInfo net.Interface) {
 	interfaces, err := net.Interfaces()
 	if err != nil {
 		fmt.Printf("Error getting interface addresses: %v\n", err)
@@ -27,9 +27,8 @@ func getInterface() (ifaceInfo *net.Interface, ipaddr string) {
 					continue
 				}
 
-				if ip.IP.To4() != nil && !ip.IP.IsLinkLocalUnicast() {
-					ifaceInfo = &iface
-					ipaddr = ip.IP.String()
+				if ip.IP.String() == ipaddr {
+					ifaceInfo = iface
 					return
 				}
 			}
