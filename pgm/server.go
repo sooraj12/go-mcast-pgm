@@ -33,6 +33,8 @@ func (tp *serverTransport) listerForDatagrams() {
 		fmt.Printf("Received message from %s: %s\n", srcAddr.String(), string(buf[:n]))
 
 		// send ack
+		tp.sock.WriteToUDP([]byte("ack from server"), srcAddr)
+		fmt.Println("Sent ack")
 	}
 }
 

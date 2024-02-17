@@ -38,7 +38,17 @@ func (tp *clientTransport) sendCast(data []byte) {
 
 // listen for ack
 func (tp *clientTransport) listenForAck() {
-	fmt.Println("Listening for ack")
+	fmt.Println("Client Listening for ack")
+
+	buf := make([]byte, 1024)
+	for {
+		n, srcAddr, err := tp.sock.ReadFromUDP(buf)
+		if err != nil {
+			fmt.Printf("Error reading from UDP connection: %v\n", err)
+			continue
+		}
+		fmt.Printf("Received message from %s: %s\n", srcAddr.String(), string(buf[:n]))
+	}
 }
 
 type clientProtocol struct {
@@ -61,7 +71,8 @@ func createClientTransport() (t *clientTransport) {
 
 	// get Interface ip
 	_, interfaceIp := getInterface()
-	ifaceAddr, err := net.ResolveUDPAddr("udp4", net.JoinHostPort(interfaceIp, aport))
+	fmt.Println(interfaceIp)
+	ifaceAddr, err := net.ResolveUDPAddr("udp4", fmt.Sprintf(":%s", aport))
 	if err != nil {
 		log.Fatal(err)
 		os.Exit(1)
