@@ -7,13 +7,7 @@ import (
 	"os"
 )
 
-type server struct{}
-
-type serverTransport struct {
-	protocol *serverProtocol
-	sock    *net.UDPConn
-}
-
+// server transport
 func (tp *serverTransport) listerForDatagrams() {
 
 	buf := make([]byte, 1024)
@@ -42,10 +36,7 @@ func (tp *serverTransport) listerForDatagrams() {
 	}
 }
 
-type serverProtocol struct {
-	transport *serverTransport
-}
-
+// server protocol
 func (pt *serverProtocol) Listen() {
 	go pt.transport.listerForDatagrams()
 }
