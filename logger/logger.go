@@ -5,9 +5,9 @@ import (
 	"os"
 )
 
-var infoLogger *log.Logger = log.New(os.Stdout, "INFO: ", log.Ldate|log.Ltime|log.Lshortfile)
-var debugLogger *log.Logger = log.New(os.Stdout, "DEBUG: ", log.Ldate|log.Ltime|log.Lshortfile)
-var errorLogger *log.Logger = log.New(os.Stdout, "ERROR: ", log.Ldate|log.Ltime|log.Lshortfile)
+var infoLogger *log.Logger = log.New(os.Stdout, "INFO: ", log.Ldate|log.Ltime)
+var debugLogger *log.Logger = log.New(os.Stdout, "DEBUG: ", log.Ldate|log.Ltime)
+var errorLogger *log.Logger = log.New(os.Stdout, "ERROR: ", log.Ldate|log.Ltime)
 
 func Infoln(v ...interface{}) {
 	infoLogger.Println(v...)
@@ -21,14 +21,14 @@ func Debugln(v ...interface{}) {
 	debugLogger.Println(v...)
 }
 
-func Debugf(s string , v ...interface{}) {
+func Debugf(s string, v ...interface{}) {
 	debugLogger.Printf(s, v...)
 }
 
-func Errorln(v ...interface{}){
+func Errorln(v ...interface{}) {
 	errorLogger.Fatalln(v...)
 }
 
-func Errorf(s string, v ...interface{}){
+func Errorf(s string, v ...interface{}) {
 	errorLogger.Fatalf(s, v...)
 }

@@ -40,8 +40,7 @@ func getInterface(ipaddr string) (ifaceInfo net.Interface) {
 	return
 }
 
-
-func getInterfaceIP() net.IP{
+func getInterfaceIP() net.IP {
 	ifaceIP, err := gateway.DiscoverInterface()
 	if err != nil {
 		logger.Errorln(err)
@@ -51,3 +50,17 @@ func getInterfaceIP() net.IP{
 	return ifaceIP
 }
 
+func fragment(data []byte, mtu int) [][]byte {
+	var fragments [][]byte
+	curr := 0
+	for curr < len(data) {
+		if len(data[curr:]) > mtu {
+			fragments = append(fragments, data[curr:curr+mtu])
+			curr += mtu
+		} else {
+			fragments = append(fragments, data[curr:])
+			curr += len(data[curr:])
+		}
+	}
+	return fragments
+}

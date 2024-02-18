@@ -20,7 +20,7 @@ func (tp *serverTransport) listerForDatagrams() {
 
 		logger.Infof("Received message from %s: %s\n", srcAddr.String(), string(buf[:n]))
 
-		ackAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", srcAddr.IP.String(), aport))
+		ackAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", srcAddr.IP.String(), tp.protocol.conf.aport))
 		if err != nil {
 			logger.Errorln(err)
 			os.Exit(1)
@@ -41,11 +41,11 @@ func (pt *serverProtocol) Listen() {
 	go pt.transport.listerForDatagrams()
 }
 
-func createServerTransport() *serverTransport {
+func createServerTransport(protocol *serverProtocol) *serverTransport {
 	// create server transport
 	// server listens for multicast messages on dport and
 	// send unicacst ack on aport
-	groupAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", mcast_ipaddr, dport))
+	groupAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", protocol.conf.mcast_ipaddr, protocol.conf.dport))
 	if err != nil {
 		logger.Errorln(err)
 		os.Exit(1)
@@ -61,18 +61,20 @@ func createServerTransport() *serverTransport {
 	}
 
 	transport := &serverTransport{
-		sock: conn,
+		sock:     conn,
+		protocol: protocol,
 	}
 
 	return transport
 }
 
 func CreateServerProtocol() *serverProtocol {
-	transport := createServerTransport()
 	protocol := &serverProtocol{
-		transport: transport,
+		conf: mcastConf,
 	}
-	transport.protocol = protocol
+	transport := createServerTransport(protocol)
+
+	protocol.transport = transport
 
 	return protocol
 }

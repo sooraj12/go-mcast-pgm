@@ -9,16 +9,38 @@ type client struct {
 	dests       *[]*nodeInfo
 	msid        int
 	trafficType Traffic
-	// config
+	config      *pgmConfig
+	dest_list   *[]string
+	pdu_delay   int
+	tx_datarate int
+	dest_status *destStatus
+	fragments   [][]byte
+}
+
+type destStatus map[string]*destination
+
+type destination struct {
+	config              *pgmConfig
+	dest                string
+	completed           bool
+	ack_received        bool
+	last_received_tsecr int
+	sent_data_count     int
+	missed_data_count   int
+	missed_ack_count    int
+	fragment_ack_status map[int]bool
+	air_datarate        int
+	retry_timeout       int
+	ack_timeout         int
+	missing_fragments   []int
 }
 
 // client transport
 type clientTransport struct {
-	protocol      *clientProtocol
-	mConn         *net.UDPConn
-	uConn         *net.UDPConn
-	min_bulk_size int
-	nodesInfo     *nodesInfo
+	protocol  *clientProtocol
+	mConn     *net.UDPConn
+	uConn     *net.UDPConn
+	nodesInfo *nodesInfo
 
 	tx_ctx_list *map[int]*client
 }
@@ -26,6 +48,7 @@ type clientTransport struct {
 // client protocol
 type clientProtocol struct {
 	transport *clientTransport
+	conf      *mcastConfig
 }
 
 // server
@@ -40,6 +63,7 @@ type serverTransport struct {
 // server transport
 type serverProtocol struct {
 	transport *serverTransport
+	conf      *mcastConfig
 }
 
 // traffic type
@@ -59,3 +83,7 @@ type nodeInfo struct {
 }
 
 type nodesInfo map[string]*nodeInfo
+
+// states
+
+// events

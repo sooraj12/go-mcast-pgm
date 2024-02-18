@@ -49,12 +49,15 @@ func (tp *clientTransport) initSend(data []byte, destIPS []string, trafficType T
 	// initialize a new state
 	state := initClient(tp, &dests, &data, msid, trafficType)
 
+	state.log("SEND")
+
 	(*tp.tx_ctx_list)[msid] = state
+	// start state machine
 }
 
 func (tp *clientTransport) sendMessage(data []byte, destIPS []string) {
 	// decide if single msg or bulk msg
-	if len(data) < tp.min_bulk_size {
+	if len(data) < tp.protocol.conf.min_bulk_size {
 		tp.initSend(data, destIPS, Message)
 	} else {
 		tp.initSend(data, destIPS, Bulk)
@@ -85,18 +88,18 @@ func (cp *clientProtocol) SendMessage(data []byte, destIPS []string) {
 	cp.transport.sendMessage(data, destIPS)
 }
 
-func createClientTransport() (t *clientTransport) {
+func createClientTransport(protocol *clientProtocol) (t *clientTransport) {
 	// create client transport
 	// client will send multicast messages over dport and
 	// wait for unicast acks over aport
-	groupAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", mcast_ipaddr, dport))
+	groupAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", protocol.conf.mcast_ipaddr, protocol.conf.dport))
 	if err != nil {
 		logger.Errorln(err)
 		os.Exit(1)
 	}
 
 	// get Interface ip
-	unicastAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf(":%d", aport))
+	unicastAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf(":%d", protocol.conf.aport))
 	if err != nil {
 		logger.Errorln(err)
 		os.Exit(1)
@@ -118,11 +121,11 @@ func createClientTransport() (t *clientTransport) {
 	}
 
 	t = &clientTransport{
-		mConn:         multicastConn,
-		uConn:         unicastConnection,
-		min_bulk_size: min_bulk_size,
-		nodesInfo:     &nodesInfo{},
-		tx_ctx_list:   &map[int]*client{},
+		protocol:    protocol,
+		mConn:       multicastConn,
+		uConn:       unicastConnection,
+		nodesInfo:   &nodesInfo{},
+		tx_ctx_list: &map[int]*client{},
 	}
 
 	// listen for ack from servers in the background
@@ -132,11 +135,12 @@ func createClientTransport() (t *clientTransport) {
 }
 
 func CreateClientProtocol() (protocol *clientProtocol) {
-	transport := createClientTransport()
 	protocol = &clientProtocol{
-		transport: transport,
+		conf: mcastConf,
 	}
-	transport.protocol = protocol
+	transport := createClientTransport(protocol)
+
+	protocol.transport = transport
 	logger.Debugln("multicast protocol is ready")
 
 	return
