@@ -11,8 +11,7 @@ type server struct{}
 
 type serverTransport struct {
 	protocol *serverProtocol
-	mConn    *net.UDPConn
-	aConn    *net.UDPConn
+	sock    *net.UDPConn
 }
 
 func (tp *serverTransport) listerForDatagrams() {
@@ -20,7 +19,7 @@ func (tp *serverTransport) listerForDatagrams() {
 
 	buf := make([]byte, 1024)
 	for {
-		n, srcAddr, err := tp.mConn.ReadFromUDP(buf)
+		n, srcAddr, err := tp.sock.ReadFromUDP(buf)
 		if err != nil {
 			fmt.Printf("Error reading from UDP connection: %v\n", err)
 			continue
@@ -28,7 +27,6 @@ func (tp *serverTransport) listerForDatagrams() {
 
 		fmt.Printf("Received message from %s: %s\n", srcAddr.String(), string(buf[:n]))
 
-		fmt.Println(srcAddr.IP.String())
 		ackAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", srcAddr.IP.String(), aport))
 		if err != nil {
 			log.Fatal(err)
@@ -36,7 +34,7 @@ func (tp *serverTransport) listerForDatagrams() {
 		}
 
 		// send ack
-		size, err := tp.aConn.WriteToUDP([]byte("ack from server"), ackAddr)
+		size, err := tp.sock.WriteToUDP([]byte("ack from server"), ackAddr)
 		if err != nil {
 			log.Fatal(err)
 			os.Exit(1)
@@ -64,12 +62,6 @@ func createServerTransport() *serverTransport {
 		os.Exit(1)
 	}
 
-	unicastAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", src_ipaddr, aport))
-	if err != nil {
-		log.Fatal(err)
-		os.Exit(1)
-	}
-
 	iface := getInterface(src_ipaddr)
 
 	// create udp multicast listener
@@ -79,15 +71,8 @@ func createServerTransport() *serverTransport {
 		os.Exit(1)
 	}
 
-	ackConn, err := net.DialUDP("udp", unicastAddr, unicastAddr)
-	if err != nil {
-		log.Fatal(err)
-		os.Exit(1)
-	}
-
 	transport := &serverTransport{
-		mConn: conn,
-		aConn: ackConn,
+		sock: conn,
 	}
 
 	return transport
