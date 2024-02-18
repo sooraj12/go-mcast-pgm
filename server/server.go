@@ -5,10 +5,8 @@ import (
 	"pgm"
 )
 
-func main() {
-	client := pgm.CreateClientProtocol()
-	go client.SendMessage([]byte("message"))
 
+func main() {
 	server := pgm.CreateServerProtocol()
 	go server.Listen()
 

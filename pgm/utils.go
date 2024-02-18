@@ -1,8 +1,7 @@
 package pgm
 
 import (
-	"fmt"
-	"log"
+	"logger"
 	"net"
 	"os"
 
@@ -12,7 +11,7 @@ import (
 func getInterface(ipaddr string) (ifaceInfo net.Interface) {
 	interfaces, err := net.Interfaces()
 	if err != nil {
-		fmt.Printf("Error getting interface addresses: %v\n", err)
+		logger.Errorf("Error getting interface addresses: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -20,7 +19,7 @@ func getInterface(ipaddr string) (ifaceInfo net.Interface) {
 		if iface.Flags&net.FlagLoopback == 0 && iface.Flags&net.FlagUp != 0 {
 			addrs, err := iface.Addrs()
 			if err != nil {
-				fmt.Println("Error:", err)
+				logger.Errorln("Error:", err)
 				continue
 			}
 
@@ -45,7 +44,7 @@ func getInterface(ipaddr string) (ifaceInfo net.Interface) {
 func getInterfaceIP() net.IP{
 	ifaceIP, err := gateway.DiscoverInterface()
 	if err != nil {
-		log.Fatal(err)
+		logger.Errorln(err)
 		os.Exit(1)
 	}
 

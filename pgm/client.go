@@ -2,7 +2,7 @@ package pgm
 
 import (
 	"fmt"
-	"log"
+	"logger"
 	"net"
 	"os"
 )
@@ -34,16 +34,14 @@ func (tp *clientTransport) sendCast(data []byte) {
 
 // listen for ack
 func (tp *clientTransport) listenForAck() {
-	fmt.Println("Client Listening for ack")
 
 	buf := make([]byte, 1024)
 	for {
 		n, srcAddr, err := tp.uConn.ReadFromUDP(buf)
 		if err != nil {
-			fmt.Printf("Error reading from UDP connection: %v\n", err)
 			continue
 		}
-		fmt.Printf("Received message from %s: %s\n", srcAddr.String(), string(buf[:n]))
+		logger.Infof("Received message from %s: %s\n", srcAddr.String(), string(buf[:n]))
 	}
 }
 
@@ -61,14 +59,14 @@ func createClientTransport() (t *clientTransport) {
 	// wait for unicast acks over aport
 	groupAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", mcast_ipaddr, dport))
 	if err != nil {
-		log.Fatal(err)
+		logger.Errorln(err)
 		os.Exit(1)
 	}
 
 	// get Interface ip
 	unicastAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf(":%d", aport))
 	if err != nil {
-		log.Fatal(err)
+		logger.Errorln(err)
 		os.Exit(1)
 	}
 
@@ -76,13 +74,13 @@ func createClientTransport() (t *clientTransport) {
 	// create UDP connection
 	multicastConn, err := net.DialUDP("udp", &net.UDPAddr{IP: net.ParseIP(ifaceIp.String())}, groupAddr)
 	if err != nil {
-		log.Fatal(err)
+		logger.Errorln(err)
 		os.Exit(1)
 	}
 
 	unicastConnection, err := net.ListenUDP("udp", unicastAddr)
 	if err != nil {
-		log.Fatal(err)
+		logger.Errorln(err)
 		os.Exit(1)
 	}
 
