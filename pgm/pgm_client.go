@@ -27,7 +27,45 @@ func initClient(tp *clientTransport, dests *[]*nodeInfo, data *[]byte, msid int,
 		tx_datarate: 1,
 		dest_status: dest_status,
 		fragments:   fragments,
+		event:       make(chan clientEvent),
+		state:       make(chan clientState),
+		currState:   Idle,
 	}
+}
+
+func (cli *client) sync() {
+	select {
+	case state := <-cli.state:
+		cli.currState = state
+	case event := <-cli.event:
+		// pass the event to state
+		switch cli.currState {
+		case Idle:
+			cli.idle(event)
+		case SendingData:
+			cli.sendingData(event)
+		case SendingExtraAddressPdu:
+			cli.sendingExtraAddr(event)
+		case WaitingForAcks:
+			cli.waitingForAck(event)
+		default:
+			cli.finished(event)
+		}
+	}
+}
+
+func (cli *client) idle(event clientEvent) {
+	logger.Debugf("SND | IDLE: %d", event)
+}
+
+func (cli *client) sendingData(event clientEvent) {}
+
+func (cli *client) sendingExtraAddr(event clientEvent) {}
+
+func (cli *client) waitingForAck(event clientEvent) {}
+
+func (cli *client) finished(event clientEvent) {
+	logger.Debugf("SND | WAITING_FOR_ACKS: %v", event)
 }
 
 func (cli *client) log(state string) {

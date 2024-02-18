@@ -48,11 +48,13 @@ func (tp *clientTransport) initSend(data []byte, destIPS []string, trafficType T
 
 	// initialize a new state
 	state := initClient(tp, &dests, &data, msid, trafficType)
-
 	state.log("SEND")
 
 	(*tp.tx_ctx_list)[msid] = state
 	// start state machine
+	go state.sync()
+	// send start event to start the state machine at idle state
+	state.event <- Start
 }
 
 func (tp *clientTransport) sendMessage(data []byte, destIPS []string) {

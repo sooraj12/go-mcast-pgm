@@ -15,6 +15,9 @@ type client struct {
 	tx_datarate int
 	dest_status *destStatus
 	fragments   [][]byte
+	event       chan clientEvent
+	state       chan clientState
+	currState   clientState
 }
 
 type destStatus map[string]*destination
@@ -84,6 +87,23 @@ type nodeInfo struct {
 
 type nodesInfo map[string]*nodeInfo
 
-// states
+// client states
+type clientState int
 
-// events
+const (
+	Idle clientState = iota
+	SendingData
+	SendingExtraAddressPdu
+	WaitingForAcks
+	Finished
+)
+
+// client events
+type clientEvent int
+
+const (
+	Start clientEvent = iota
+	AckPdu
+	PduDelayTimeout
+	RetransmissionTimeout
+)
