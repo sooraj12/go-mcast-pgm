@@ -72,8 +72,9 @@ func createClientTransport() (t *clientTransport) {
 		os.Exit(1)
 	}
 
+	ifaceIp := getInterfaceIP()
 	// create UDP connection
-	multicastConn, err := net.DialUDP("udp", &net.UDPAddr{IP: net.ParseIP(src_ipaddr)}, groupAddr)
+	multicastConn, err := net.DialUDP("udp", &net.UDPAddr{IP: net.ParseIP(ifaceIp.String())}, groupAddr)
 	if err != nil {
 		log.Fatal(err)
 		os.Exit(1)

@@ -2,8 +2,11 @@ package pgm
 
 import (
 	"fmt"
+	"log"
 	"net"
 	"os"
+
+	"github.com/jackpal/gateway"
 )
 
 func getInterface(ipaddr string) (ifaceInfo net.Interface) {
@@ -37,3 +40,15 @@ func getInterface(ipaddr string) (ifaceInfo net.Interface) {
 
 	return
 }
+
+
+func getInterfaceIP() net.IP{
+	ifaceIP, err := gateway.DiscoverInterface()
+	if err != nil {
+		log.Fatal(err)
+		os.Exit(1)
+	}
+
+	return ifaceIP
+}
+

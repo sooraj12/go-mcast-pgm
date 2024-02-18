@@ -61,8 +61,8 @@ func createServerTransport() *serverTransport {
 		log.Fatal(err)
 		os.Exit(1)
 	}
-
-	iface := getInterface(src_ipaddr)
+	ifaceIp := getInterfaceIP()
+	iface := getInterface(ifaceIp.String())
 
 	// create udp multicast listener
 	conn, err := net.ListenMulticastUDP("udp", &iface, groupAddr)
