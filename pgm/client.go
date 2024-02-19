@@ -28,16 +28,16 @@ func (tp *clientTransport) initSend(data []byte, destIPS []string, trafficType T
 	}
 
 	// convert IPv4 addresses from string format into 32bit values
-	dests := []*nodeInfo{}
+	dests := []nodeInfo{}
 	for _, ip := range destIPS {
-		entry := &nodeInfo{}
+		entry := nodeInfo{}
 		entry.addr = ip
 		if node, ok := (*tp.nodesInfo)[ip]; !ok {
 			entry.air_datarate = default_air_datarate
 			entry.ack_timeout = default_ack_timeout
 			entry.retry_timeout = default_retry_timeout
 		} else {
-			n := *node
+			n := node
 			entry.air_datarate = n.air_datarate
 			entry.ack_timeout = n.ack_timeout
 			entry.retry_timeout = n.retry_timeout
@@ -47,7 +47,7 @@ func (tp *clientTransport) initSend(data []byte, destIPS []string, trafficType T
 	}
 
 	// initialize a new state
-	state := initClient(tp, &dests, &data, msid, trafficType)
+	state := initClient(tp, &dests, &data, int32(msid), trafficType)
 	state.log("SEND")
 
 	(*tp.tx_ctx_list)[msid] = state
@@ -127,7 +127,7 @@ func createClientTransport(protocol *clientProtocol) (t *clientTransport) {
 		mConn:       multicastConn,
 		uConn:       unicastConnection,
 		nodesInfo:   &nodesInfo{},
-		tx_ctx_list: &map[int]*client{},
+		tx_ctx_list: &map[int]client{},
 	}
 
 	// listen for ack from servers in the background

@@ -1,16 +1,19 @@
 package pgm
 
-import "logger"
+import (
+	"logger"
+	"time"
+)
 
-func initDestination(config *pgmConfig, dest string, fragmentLen int, airDatarate int,
-	retryTimeout int, ackTimeout int) (destinationStatus *destination) {
+func initDestination(config *pgmConfig, dest string, fragmentLen int, airDatarate float64,
+	retryTimeout time.Duration, ackTimeout time.Duration) (destinationStatus destination) {
 
 	fragmentAckStatus := map[int]bool{}
 	for i := 0; i < fragmentLen; i++ {
 		fragmentAckStatus[i] = false
 	}
 
-	destinationStatus = &destination{
+	destinationStatus = destination{
 		config:              config,
 		dest:                dest,
 		completed:           false,
@@ -23,15 +26,27 @@ func initDestination(config *pgmConfig, dest string, fragmentLen int, airDatarat
 		air_datarate:        airDatarate,
 		retry_timeout:       retryTimeout,
 		ack_timeout:         ackTimeout,
-		missing_fragments:   make([]int, 2000),
+		missing_fragments:   []int{},
 	}
 
 	logger.Debugf("TX: Destination(to: %s)", dest)
-	logger.Debugf("AirDatarate: %d", destinationStatus.air_datarate)
+	logger.Debugf("AirDatarate: %f", destinationStatus.air_datarate)
 	logger.Debugf("RetryTimeout: %d", destinationStatus.retry_timeout)
 	logger.Debugf("AckTimeout: %d", destinationStatus.ack_timeout)
 
 	return
 }
 
-func (d *destination) log() {}
+func (d *destination) updateMissedDataCnt() {
+	d.missed_data_count += len(d.missing_fragments)
+}
+
+func (d *destination) isCompleted() bool {
+	for _, val := range d.fragment_ack_status {
+		if !val {
+			return false
+		}
+	}
+
+	return true
+}
