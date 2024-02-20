@@ -30,6 +30,10 @@ type client struct {
 	retry_timeout      time.Duration
 	air_datarate       float64
 	retry_timestamp    time.Time
+	pdu_timer_chan     <-chan time.Time
+	retry_timer_chan   <-chan time.Time
+	pdu_timer          *time.Timer
+	retry_timer        *time.Timer
 }
 
 type txFragment struct {

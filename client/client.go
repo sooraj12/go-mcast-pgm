@@ -1,15 +1,15 @@
 package main
 
 import (
-	"fmt"
 	"pgm"
+	"sync"
 )
 
 func main() {
+	wait := &sync.WaitGroup{}
 	destIPS := []string{"192.168.1.3"}
 	client := pgm.CreateClientProtocol()
+	wait.Add(1)
 	go client.SendMessage([]byte("message"), destIPS)
-
-	var input string
-	fmt.Scan(&input)
+	wait.Wait()
 }

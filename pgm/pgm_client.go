@@ -45,26 +45,44 @@ func initClient(tp *clientTransport, dests *[]nodeInfo, data *[]byte, msid int32
 		retry_timeout:      0,
 		air_datarate:       pgmConf.default_datarate,
 		retry_timestamp:    time.Now(),
+		pdu_timer_chan:     make(chan time.Time),
+		retry_timer_chan:   make(chan time.Time),
 	}
 }
 
 func (cli *client) sync() {
-	select {
-	case state := <-cli.state:
-		cli.currState = state
-	case event := <-cli.event:
-		// pass the event to state
-		switch cli.currState {
-		case Idle:
-			go cli.idle(event)
-		case SendingData:
-			go cli.sendingData(event)
-		case SendingExtraAddressPdu:
-			go cli.sendingExtraAddr(event)
-		case WaitingForAcks:
-			go cli.waitingForAck(event)
+	for {
+		select {
+		case state := <-cli.state:
+			cli.currState = state
+		case event := <-cli.event:
+			// pass the event to state
+			switch cli.currState {
+			case Idle:
+				go cli.idle(event)
+			case SendingData:
+				go cli.sendingData(event)
+			case SendingExtraAddressPdu:
+				go cli.sendingExtraAddr(event)
+			case WaitingForAcks:
+				go cli.waitingForAck(event)
+			default:
+				go cli.finished(event)
+			}
+		}
+	}
+}
+
+func (cli *client) timerSync() {
+	for {
+		select {
+		case <-cli.retry_timer_chan:
+			cli.event <- RetransmissionTimeout
+		case <-cli.pdu_timer_chan:
+			cli.event <- PduDelayTimeout
+		// fixme : remove this costly default,
+		// but then the channel becomes blocking
 		default:
-			go cli.finished(event)
 		}
 	}
 }
@@ -223,16 +241,16 @@ func (cli *client) initTxn(timeoutOccured bool) {
 	}
 
 	old_tx_datarate := cli.minAirDatarate()
-	remainingBytes = len(*cli.tx_fragments) * cli.config.mtu
-	if !timeoutOccured && remainingBytes > 0 {
-		duration := round((float64(remainingBytes) * 8 * 1000) / cli.tx_datarate)
+	remaining := len(*cli.tx_fragments) * cli.config.mtu
+	if !timeoutOccured && remaining > 0 {
+		duration := round((float64(remaining) * 8 * 1000) / cli.tx_datarate)
 		// The txDatarate is increased by the configured number of inflightBytes.
 		// This shall ensure that the txDatarate gets higher if more AirDatarate
 		// is available. The limitation to the maximum number of inflightBytes
 		// shall prevent packet loss due buffer overflow if the AirDatarate didn´t increase */
 		logger.Debugf("TX-CTX: Increased txDatarate: %f", cli.tx_datarate)
 		logger.Debugf("TX-CTX: Limit TxDatarate to %f", old_tx_datarate*(1+cli.config.max_increase))
-		cli.tx_datarate = round(((float64(remainingBytes) + cli.config.inflight_bytes) * 8 * 1000) / duration)
+		cli.tx_datarate = round(((float64(remaining) + cli.config.inflight_bytes) * 8 * 1000) / duration)
 		cli.tx_datarate = min(cli.tx_datarate, old_tx_datarate*(1+cli.config.max_increase))
 		logger.Debugf("TX-CTX: Increased txDatarate to %f", cli.tx_datarate)
 	}
@@ -272,7 +290,7 @@ func (cli *client) initTxn(timeoutOccured bool) {
 		}
 		logger.Debugf("TX-CTX: Message: Set RetryTimeout to %d at retrycount of %d", retryTimeout, maxRetryCount)
 
-		cli.retry_timestamp = time.Now().Add(time.Microsecond * retryTimeout)
+		cli.retry_timestamp = time.Now().Add(time.Millisecond * retryTimeout)
 		cli.retry_timeout = retryTimeout
 		cli.air_datarate = 0 // not used
 	} else { // for bulk messages
@@ -297,7 +315,7 @@ func (cli *client) initTxn(timeoutOccured bool) {
 		retryTimeout = time.Duration(max(float64(retryTimeout), float64(cli.config.min_retry_timeout)))
 		retryTimeout = time.Duration(min(float64(retryTimeout), float64(cli.config.max_retry_timeout)))
 
-		cli.retry_timestamp = time.Now().Add(time.Microsecond * time.Duration(retryTimeout))
+		cli.retry_timestamp = time.Now().Add(time.Millisecond * time.Duration(retryTimeout))
 		cli.retry_timeout = retryTimeout
 		logger.Debugf("TX-CTX Bulk: Set RetryTimeout %d to for AirDatarate of %f and ackTimeout of %d", cli.retry_timeout, airDatarate, ackTimeout)
 		logger.Debugf("TX Init() tx_datarate: %f air_datarate: %f retry_timeout: %d ack_timeout: %d", cli.tx_datarate, airDatarate, cli.retry_timeout, ackTimeout)
@@ -329,9 +347,39 @@ func (cli *client) initTxn(timeoutOccured bool) {
 	logger.Debugf("TX +--------------------------------------------------------------+")
 }
 
+func (cli *client) startRetryTimer(timeout time.Duration) {
+	if cli.retry_timer != nil {
+		cli.retry_timer.Stop()
+	}
+	cli.retry_timer = time.NewTimer(timeout)
+	cli.retry_timer_chan = cli.retry_timer.C
+}
+
+func (cli *client) cancelRetryTimer() {
+	if cli.retry_timer != nil {
+		cli.retry_timer.Stop()
+	}
+}
+
+func (cli *client) startPDUTimer(timeout time.Duration) {
+	if cli.pdu_timer != nil {
+		cli.pdu_timer.Stop()
+	}
+	cli.pdu_timer = time.NewTimer(timeout)
+	cli.pdu_timer_chan = cli.pdu_timer.C
+}
+
+func (cli *client) cancelPDUTimer() {
+	if cli.pdu_timer != nil {
+		cli.pdu_timer.Stop()
+	}
+}
+
 func (cli *client) idle(event clientEvent) {
 	logger.Debugf("SND | IDLE: %d", event)
 	// cancel pdu timer and retransmission timer
+	cli.cancelRetryTimer()
+	cli.cancelPDUTimer()
 
 	switch event {
 	case Start:
@@ -348,32 +396,49 @@ func (cli *client) idle(event clientEvent) {
 			cli.seqno,
 		)
 		cli.seqno += 1
-
 		if cli.trafficType == Message {
 			addrPDU.payload = &(*cli.fragments)[0]
 			fragment := (*cli.tx_fragments)[0]
 			fragment.sent = true
 			fragment.len = len(*addrPDU.payload)
-			// increase number of sent data pdus
 			cli.incNumOfSentDataPDU()
 			cli.num_sent_data_pdus += 1
 		}
 		addrPDU.log("SND")
 		var pdu bytes.Buffer
 		addrPDU.toBuffer(&pdu)
+		cli.transport.sendCast(pdu.Bytes())
+
+		// start timers
+		if cli.trafficType == Message {
+			timeout := time.Until(cli.retry_timestamp)
+			cli.cancelRetryTimer()
+			cli.startRetryTimer(timeout)
+			logger.Debugf("SND | start Retransmission timer with %d msec delay", timeout.Milliseconds())
+			cli.state <- WaitingForAcks
+			logger.Debugln("SND | changed state to WAITING_FOR_ACKS")
+		} else {
+			logger.Debugf("SND | IDLE - start PDU Delay timer with a %d msec timeout", min_pdu_delay)
+			cli.startPDUTimer(min_pdu_delay)
+			logger.Debugf("SND | IDLE - Change state to SENDING_DATA")
+		}
 	}
 }
 
-func (cli *client) sendingData(event clientEvent) {}
+func (cli *client) sendingData(event clientEvent) {
+	logger.Debugf("SND | SENDING_DATA: %d", event)
+}
 
-func (cli *client) sendingExtraAddr(event clientEvent) {}
+func (cli *client) sendingExtraAddr(event clientEvent) {
+	logger.Debugf("SND | SENDING_EXTRA_ADDRESS_PDU: %d", event)
+}
 
 func (cli *client) waitingForAck(event clientEvent) {
 	logger.Debugf("SND | WAITING_FOR_ACKS: %v", event)
 }
 
 func (cli *client) finished(event clientEvent) {
-	logger.Debugf("SND | WAITING_FOR_ACKS: %v", event)
+	logger.Debugf("SND | FINISHED: %v", event)
 }
 
 func (cli *client) log(state string) {
