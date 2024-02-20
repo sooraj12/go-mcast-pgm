@@ -7,23 +7,28 @@ import (
 	"os"
 )
 
-func (tp *serverTransport) onDataPDU() {}
+func (tp *serverTransport) onDataPDU(data []byte) {}
 
-func (tp *serverTransport) onAddrPDU() {}
+func (tp *serverTransport) onAddrPDU(data []byte) {
+	addressPdu := addressPDU{}
+	addressPdu.fromBuffer(data)
+}
 
 // server transport
 func (tp *serverTransport) listerForDatagrams() {
 	logger.Debugf("socket listens for data in port: %d", tp.protocol.conf.dport)
 
-	buf := make([]byte, 1024)
+	buf := make([]byte, 1400)
 	for {
 		n, srcAddr, err := tp.sock.ReadFromUDP(buf)
+		b := make([]byte, n)
+		copy(b, buf)
 		if err != nil {
 			logger.Errorf("Error reading from UDP connection: %v\n", err)
 			continue
 		}
 		logger.Debugf("RX Received packet from %s type: %d len:%d", srcAddr.IP.String(), 2, n)
-		tp.processPDU(buf)
+		tp.processPDU(b)
 	}
 }
 
@@ -31,6 +36,13 @@ func (tp *serverTransport) processPDU(data []byte) {
 	pdu := PDU{}
 	pdu.fromBuffer(data)
 	pdu.log("RX")
+
+	switch pdu.PduType {
+	case uint8(Address):
+		tp.onAddrPDU(data)
+	case uint8(Data):
+		tp.onDataPDU(data)
+	}
 }
 
 // server protocol

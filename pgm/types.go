@@ -81,32 +81,32 @@ type addressPDU struct {
 }
 
 type destEncoder struct {
-	destid int32
-	seqno  int32
+	Destid int32
+	Seqno  int32
 }
 
 type addrPDUHeaderEncoder struct {
-	length   uint16
-	priority uint8
-	pduType  uint8
-	total    uint16
-	checksum uint16
-	cwnd     uint16
-	seqnohi  uint16
-	offset   uint16
-	reserved uint16
-	srcid    int32
-	msid     int32
-	expires  int32
-	dest_len uint16
-	rsvlen   uint16
+	Length   uint16
+	Priority uint8
+	PduType  uint8
+	Total    uint16
+	Checksum uint16
+	Cwnd     uint16
+	Seqnohi  uint16
+	Offset   uint16
+	Reserved uint16
+	Srcid    int32
+	Msid     int32
+	Expires  int32
+	Dest_len uint16
+	Rsvlen   uint16
 }
 
 type addressPDUOptionsEncoder struct {
-	tsopt uint8
-	l     uint8
-	v     uint16
-	tsval int64
+	Tsopt uint8
+	L     uint8
+	V     uint16
+	Tsval int64
 }
 
 // client transport

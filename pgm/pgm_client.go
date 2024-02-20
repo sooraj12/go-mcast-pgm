@@ -386,21 +386,32 @@ func (cli *client) idle(event clientEvent) {
 		// init transaction
 		cli.initTxn(false)
 		// send address pdu
-		addrPDU := initAddrPDU(uint16(len(*cli.fragments)),
+		destEntries := []destinationEntry{}
+		for _, val := range *cli.dest_list {
+			entry := destinationEntry{
+				dest_ipaddr: val,
+				seqno:       cli.seqno,
+			}
+
+			destEntries = append(destEntries, entry)
+		}
+		addrPDU := addressPDU{}
+		addrPDU.init(uint16(len(*cli.fragments)),
 			uint16(len(*cli.tx_fragments)),
 			cli.getSeqnohi(),
 			cli.msid,
 			time.Now().UnixMilli(),
 			getInterfaceIP().String(),
-			cli.dest_list,
-			cli.seqno,
+			&destEntries,
 		)
 		cli.seqno += 1
 		if cli.trafficType == Message {
 			addrPDU.payload = &(*cli.fragments)[0]
-			fragment := (*cli.tx_fragments)[0]
-			fragment.sent = true
-			fragment.len = len(*addrPDU.payload)
+			fragment := txFragment{
+				sent: true,
+				len:  len(*addrPDU.payload),
+			}
+			(*cli.tx_fragments)[0] = fragment
 			cli.incNumOfSentDataPDU()
 			cli.num_sent_data_pdus += 1
 		}

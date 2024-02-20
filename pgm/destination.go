@@ -1,6 +1,8 @@
 package pgm
 
 import (
+	"bytes"
+	"encoding/binary"
 	"logger"
 	"time"
 )
@@ -49,4 +51,37 @@ func (d *destination) isCompleted() bool {
 	}
 
 	return true
+}
+
+func (de *destinationEntry) toBuffer() []byte {
+	destEntry := bytes.Buffer{}
+	entry := destEncoder{
+		Destid: ipToInt32(de.dest_ipaddr),
+		Seqno:  de.seqno,
+	}
+
+	binary.Write(&destEntry, binary.LittleEndian, entry)
+
+	return destEntry.Bytes()
+}
+
+func (de *destinationEntry) fromBuffer(data []byte) int {
+	if len(data) < destination_entry_len {
+		logger.Errorln("RX: DestinationEntry.from_buffer() FAILED with: Message too small")
+		return 0
+	}
+
+	buf := bytes.Buffer{}
+	buf.Write(data)
+	var des destEncoder
+	err := binary.Read(&buf, binary.LittleEndian, &des)
+	if err != nil {
+		logger.Errorln(err)
+		return 0
+	}
+
+	de.dest_ipaddr = ipInt32ToString(des.Destid)
+	de.seqno = des.Seqno
+
+	return destination_entry_len
 }

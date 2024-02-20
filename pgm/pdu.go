@@ -3,7 +3,6 @@ package pgm
 import (
 	"bytes"
 	"encoding/binary"
-	"fmt"
 	"logger"
 )
 
@@ -17,7 +16,7 @@ func (p *PDU) fromBuffer(data []byte) {
 	buf.Write(data[:minimun_packet_len])
 	err := binary.Read(&buf, binary.LittleEndian, p)
 	if err != nil {
-		fmt.Println(err)
+		logger.Errorln(err)
 		return
 	}
 }

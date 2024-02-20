@@ -108,7 +108,7 @@ func ipInt32ToString(n int32) string {
 
 	// Convert the int32 value to a slice of bytes
 	// using big-endian byte order
-	binary.BigEndian.PutUint32(ip4, uint32(n))
+	binary.LittleEndian.PutUint32(ip4, uint32(n))
 
 	// Convert the slice of bytes to an IP type
 	ip := net.IP(ip4)
