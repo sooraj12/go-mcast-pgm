@@ -7,8 +7,13 @@ import (
 	"os"
 )
 
+func (tp *serverTransport) onDataPDU() {}
+
+func (tp *serverTransport) onAddrPDU() {}
+
 // server transport
 func (tp *serverTransport) listerForDatagrams() {
+	logger.Debugf("socket listens for data in port: %d", tp.protocol.conf.dport)
 
 	buf := make([]byte, 1024)
 	for {
@@ -17,23 +22,15 @@ func (tp *serverTransport) listerForDatagrams() {
 			logger.Errorf("Error reading from UDP connection: %v\n", err)
 			continue
 		}
-
-		logger.Infof("Received message from %s: %s\n", srcAddr.String(), string(buf[:n]))
-
-		ackAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", srcAddr.IP.String(), tp.protocol.conf.aport))
-		if err != nil {
-			logger.Errorln(err)
-			os.Exit(1)
-		}
-
-		// send ack
-		_, err = tp.sock.WriteToUDP([]byte("ack from server"), ackAddr)
-		if err != nil {
-			logger.Errorln(err)
-			os.Exit(1)
-		}
-
+		logger.Debugf("RX Received packet from %s type: %d len:%d", srcAddr.IP.String(), 2, n)
+		tp.processPDU(buf)
 	}
+}
+
+func (tp *serverTransport) processPDU(data []byte) {
+	pdu := PDU{}
+	pdu.fromBuffer(data)
+	pdu.log("RX")
 }
 
 // server protocol
@@ -61,8 +58,9 @@ func createServerTransport(protocol *serverProtocol) *serverTransport {
 	}
 
 	transport := &serverTransport{
-		sock:     conn,
-		protocol: protocol,
+		sock:        conn,
+		protocol:    protocol,
+		rx_ctx_list: &map[int]server{},
 	}
 
 	return transport
@@ -75,6 +73,6 @@ func CreateServerProtocol() *serverProtocol {
 	transport := createServerTransport(protocol)
 
 	protocol.transport = transport
-
+	logger.Debugln("protocol is ready")
 	return protocol
 }

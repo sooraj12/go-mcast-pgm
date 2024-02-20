@@ -16,4 +16,5 @@ const (
 	minimum_addr_pdu_len  int           = 32
 	destination_entry_len int           = 8
 	opt_ts_val_len        int           = 12
+	minimun_packet_len    int           = 4
 )

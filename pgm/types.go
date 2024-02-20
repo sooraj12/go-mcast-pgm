@@ -85,7 +85,7 @@ type destEncoder struct {
 	seqno  int32
 }
 
-type addrPDUEncoder struct {
+type addrPDUHeaderEncoder struct {
 	length   uint16
 	priority uint8
 	pduType  uint8
@@ -100,12 +100,13 @@ type addrPDUEncoder struct {
 	expires  int32
 	dest_len uint16
 	rsvlen   uint16
-	// fixme : change to a slice
-	destEntries [1]destEncoder
-	tsopt       uint8
-	l           uint8
-	v           uint16
-	tsval       int64
+}
+
+type addressPDUOptionsEncoder struct {
+	tsopt uint8
+	l     uint8
+	v     uint16
+	tsval int64
 }
 
 // client transport
@@ -141,12 +142,20 @@ type server struct{}
 type serverTransport struct {
 	protocol *serverProtocol
 	sock     *net.UDPConn
+
+	rx_ctx_list *map[int]server
 }
 
 // server transport
 type serverProtocol struct {
 	transport *serverTransport
 	conf      *mcastConfig
+}
+
+type PDU struct {
+	Len      uint16
+	Priority uint8
+	PduType  uint8
 }
 
 // traffic type

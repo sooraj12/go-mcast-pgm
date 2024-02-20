@@ -82,40 +82,48 @@ func (addr *addressPDU) length() uint16 {
 
 func (addr *addressPDU) toBuffer(b *bytes.Buffer) {
 
-	destEntries := []destEncoder{}
+	destEntries := bytes.Buffer{}
 	for _, d := range *addr.dst_entries {
-		destEntries = append(destEntries, destEncoder{
+		entry := destEncoder{
 			destid: ipToInt32(d.dest_ipaddr),
 			seqno:  d.seqno,
-		})
-	}
-	// convert dest entries to fixed length array for encoding
-	var entries [1]destEncoder
-	copy(entries[:], destEntries[:])
+		}
 
-	pdu := addrPDUEncoder{
-		length:      addr.length(),
-		priority:    0,
-		pduType:     uint8(addr.pduType),
-		total:       addr.total,
-		checksum:    0,
-		cwnd:        addr.cwnd,
-		seqnohi:     addr.seqnohi,
-		offset:      addr.length() - uint16(len(*addr.payload)),
-		reserved:    0,
-		srcid:       ipToInt32(addr.srcIP),
-		msid:        addr.msid,
-		expires:     addr.expires,
-		dest_len:    uint16(len(*addr.dst_entries)),
-		rsvlen:      addr.rsvlen,
-		destEntries: entries,
-		tsopt:       0,
-		l:           12,
-		v:           0,
-		tsval:       addr.tsval,
+		binary.Write(&destEntries, binary.LittleEndian, entry)
 	}
 
-	err := binary.Write(b, binary.LittleEndian, pdu)
+	pduHeader := addrPDUHeaderEncoder{
+		length:   addr.length(),
+		priority: 0,
+		pduType:  uint8(addr.pduType),
+		total:    addr.total,
+		checksum: 0,
+		cwnd:     addr.cwnd,
+		seqnohi:  addr.seqnohi,
+		offset:   addr.length() - uint16(len(*addr.payload)),
+		reserved: 0,
+		srcid:    ipToInt32(addr.srcIP),
+		msid:     addr.msid,
+		expires:  addr.expires,
+		dest_len: uint16(len(*addr.dst_entries)),
+		rsvlen:   addr.rsvlen,
+	}
+
+	pduOptions := addressPDUOptionsEncoder{
+		tsopt: 0,
+		l:     12,
+		v:     0,
+		tsval: addr.tsval,
+	}
+
+	err := binary.Write(b, binary.LittleEndian, pduHeader)
+	if err != nil {
+		return
+	}
+
+	b.Write(destEntries.Bytes())
+
+	err = binary.Write(b, binary.LittleEndian, pduOptions)
 	if err != nil {
 		return
 	}

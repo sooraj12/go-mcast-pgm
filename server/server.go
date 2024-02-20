@@ -1,15 +1,14 @@
 package main
 
 import (
-	"fmt"
 	"pgm"
+	"sync"
 )
 
-
 func main() {
+	wait := &sync.WaitGroup{}
 	server := pgm.CreateServerProtocol()
+	wait.Add(1)
 	go server.Listen()
-
-	var input string
-	fmt.Scan(&input)
+	wait.Wait()
 }
