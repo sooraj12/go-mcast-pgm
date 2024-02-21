@@ -203,6 +203,15 @@ func (addr *addressPDU) isRecepient(ip string) bool {
 	return false
 }
 
+func (add *addressPDU) getDestList() []string {
+	dests := []string{}
+	for _ , val := range *add.dst_entries {
+		dests = append(dests, val.dest_ipaddr)
+	}
+
+	return dests
+}
+
 func (addr *addressPDU) log(state string) {
 	logger.Debugf("%s *** Address PDU *************************************************", state)
 	logger.Debugf("%s * total:%d cwnd:%d seqnoh:%d srcid:%s msid:%d expires:%d rsvlen:%d", state,

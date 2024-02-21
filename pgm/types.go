@@ -141,6 +141,16 @@ type server struct {
 	event     chan *severEventChan
 	currState serverState
 	msid      int32
+	remoteIP string
+	dests *[]string
+	mcastACKTimeout time.Duration
+	startTimestamp time.Time
+	received  *map[int]int
+	fragments          *map[int]*[]byte
+	pduTimerChan <-chan time.Time
+	ackTimerChan <- chan time.Time
+	pduTimer *time.Timer
+	ackTimer *time.Timer
 }
 
 type severEventChan struct {

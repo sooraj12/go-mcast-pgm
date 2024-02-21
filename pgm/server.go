@@ -26,7 +26,7 @@ func (tp *serverTransport) onAddrPDU(data []byte) {
 
 	// # On receipt of an Address_PDU the receiving node shall first check whether
 	// # the Address_PDU with the same tuple "Source_ID, MSID" has already been received
-	serverEvent := &severEventChan{id: eventID, data: addressPdu}
+	serverEvent := &severEventChan{id: eventID, data: &addressPdu}
 	if val, ok := (*tp.rx_ctx_list)[key]; !ok {
 		// If its own ID is not in the list of Destination_Entries,
 		// the receiving node shall discard the Address_PDU
@@ -36,7 +36,8 @@ func (tp *serverTransport) onAddrPDU(data []byte) {
 		addressPdu.log("RCV")
 
 		state := server{}
-		state.init(msid)
+		destList := addressPdu.getDestList()
+		state.init(msid, remoteIP, &destList)
 
 		(*tp.rx_ctx_list)[key] = state
 
