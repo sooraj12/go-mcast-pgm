@@ -193,6 +193,16 @@ func (addr *addressPDU) fromBuffer(data []byte) {
 	addr.payload = &payload
 }
 
+func (addr *addressPDU) isRecepient(ip string) bool {
+	for _, dest := range *addr.dst_entries {
+		if dest.dest_ipaddr == ip {
+			return true
+		}
+	}
+
+	return false
+}
+
 func (addr *addressPDU) log(state string) {
 	logger.Debugf("%s *** Address PDU *************************************************", state)
 	logger.Debugf("%s * total:%d cwnd:%d seqnoh:%d srcid:%s msid:%d expires:%d rsvlen:%d", state,

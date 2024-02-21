@@ -136,14 +136,24 @@ type clientProtocol struct {
 }
 
 // server
-type server struct{}
+type server struct {
+	state     chan serverState
+	event     chan *severEventChan
+	currState serverState
+	msid      int32
+}
+
+type severEventChan struct {
+	id   serverEvent
+	data interface{}
+}
 
 // server protocol
 type serverTransport struct {
 	protocol *serverProtocol
 	sock     *net.UDPConn
 
-	rx_ctx_list *map[int]server
+	rx_ctx_list *map[uniqKey]server
 }
 
 // server transport
@@ -196,3 +206,27 @@ const (
 	Data
 	ExtraAddress
 )
+
+type serverEvent int
+
+const (
+	server_AddressPDU serverEvent = iota
+	server_ExtraAddressPDU
+	server_DataPDU
+	server_LastPduTimeout
+	server_AckPduTimeout
+)
+
+type serverState int
+
+const (
+	server_Idle serverState = iota
+	server_ReceivingData
+	server_SentAck
+	server_Finished
+)
+
+type uniqKey struct {
+	remoteIP string
+	msid     int32
+}

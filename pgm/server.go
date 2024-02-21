@@ -12,6 +12,49 @@ func (tp *serverTransport) onDataPDU(data []byte) {}
 func (tp *serverTransport) onAddrPDU(data []byte) {
 	addressPdu := addressPDU{}
 	addressPdu.fromBuffer(data)
+
+	var eventID serverEvent
+	if addressPdu.pduType == Address {
+		eventID = server_AddressPDU
+	} else {
+		eventID = server_ExtraAddressPDU
+	}
+
+	remoteIP := addressPdu.srcIP
+	msid := addressPdu.msid
+	key := uniqKey{remoteIP, msid}
+
+	// # On receipt of an Address_PDU the receiving node shall first check whether
+	// # the Address_PDU with the same tuple "Source_ID, MSID" has already been received
+	serverEvent := &severEventChan{id: eventID, data: addressPdu}
+	if val, ok := (*tp.rx_ctx_list)[key]; !ok {
+		// If its own ID is not in the list of Destination_Entries,
+		// the receiving node shall discard the Address_PDU
+		if !addressPdu.isRecepient(getInterfaceIP().String()) && false {
+			return
+		}
+		addressPdu.log("RCV")
+
+		state := server{}
+		state.init(msid)
+
+		(*tp.rx_ctx_list)[key] = state
+
+		// start state machine
+		go state.sync()
+		go state.timerSync()
+		// send event to state machine
+		state.event <- serverEvent
+	} else {
+		// There is already a RxContext -> forward message to state machine
+		addressPdu.log("RCV")
+
+		// start state machine
+		go val.sync()
+		go val.timerSync()
+		// send event to state machine
+		val.event <- serverEvent
+	}
 }
 
 // server transport
@@ -28,7 +71,7 @@ func (tp *serverTransport) listerForDatagrams() {
 			continue
 		}
 		logger.Debugf("RX Received packet from %s type: %d len:%d", srcAddr.IP.String(), 2, n)
-		tp.processPDU(b)
+		go tp.processPDU(b)
 	}
 }
 
@@ -72,7 +115,7 @@ func createServerTransport(protocol *serverProtocol) *serverTransport {
 	transport := &serverTransport{
 		sock:        conn,
 		protocol:    protocol,
-		rx_ctx_list: &map[int]server{},
+		rx_ctx_list: &map[uniqKey]server{},
 	}
 
 	return transport
