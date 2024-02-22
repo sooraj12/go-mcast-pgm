@@ -90,7 +90,42 @@ func (ack *ackPDU) toBuffer(b *bytes.Buffer) {
 	}
 }
 
-func (ack *ackPDU) fromBuffer(data []byte) {}
+func (ack *ackPDU) fromBuffer(data []byte) {
+	if uint16(len(data)) < min_ack_pdu_len {
+		logger.Errorln("RX: AckPdu.from_buffer() FAILED with: Message to small")
+		return
+	}
+
+	buf := bytes.Buffer{}
+	ackpdu := ackPDUEncoder{}
+	buf.Write(data[:min_ack_pdu_len])
+	binary.Read(&buf, binary.LittleEndian, &ackpdu)
+
+	if uint16(len(data)) < ackpdu.Length {
+		logger.Errorln("RX: AckPdu.from_buffer() FAILED with: Message to small")
+		return
+	}
+
+	if ackpdu.Map != 0 {
+		logger.Errorln("RX: AckPdu.from_buffer() FAILED witg: Unused field is not zero")
+		return
+	}
+
+	// read ack info entries
+	count := uint16(0)
+	nBytes := min_ack_pdu_len
+	entries := []ackInfoEntry{}
+	for count < ackpdu.AckInfoLen {
+		infoEntry := ackInfoEntry{}
+		infoEntry.fromBuffer(data[nBytes:])
+		entries = append(entries, infoEntry)
+		count += 1
+		nBytes += infoEntry.length()
+	}
+
+	ack.srcIP = ipInt32ToString(ackpdu.SrcID)
+	ack.infoEntries = &entries
+}
 
 func (ack *ackPDU) log(rxtx string) {
 	logger.Debugf("%s *** AckPdu *************************************************", rxtx)
@@ -125,12 +160,12 @@ func (ae *ackInfoEntry) length() uint16 {
 
 func (ae *ackInfoEntry) toBuffer(b *bytes.Buffer) {
 	ackInfo := ackInfoEntryEncoder{
-		Length:       ae.length(),
-		Reserved:     0,
-		Seqnohi:      ae.seqnohi,
-		RemoteID:     ipToInt32(ae.remoteIP),
-		Msid:         ae.msid,
-		MissingCount: uint16(len(*ae.missingSeqnos)),
+		Length:     ae.length(),
+		Reserved:   0,
+		Seqnohi:    ae.seqnohi,
+		RemoteID:   ipToInt32(ae.remoteIP),
+		Msid:       ae.msid,
+		MissingLen: uint16(len(*ae.missingSeqnos)),
 	}
 	binary.Write(b, binary.LittleEndian, &ackInfo)
 
@@ -164,5 +199,43 @@ func (ae *ackInfoEntry) fromBuffer(data []byte) {
 		logger.Errorln(err)
 		return
 	}
+	buf.Reset()
+	if ackInfoHeader.Length > uint16(len(data)) {
+		logger.Errorln("RX AckInfoEntry.from_buffer() FAILED with: Buffer too small")
+		return
+	}
+	if ackInfoHeader.Reserved != 0 {
+		logger.Errorln("RX AckInfoEntry.from_buffer() FAILED with: Reserved field is not zero")
+		return
+	}
+	if ackInfoHeader.Length != min_ack_info_entry_len+uint16(opt_ts_val_len)+(ackInfoHeader.MissingLen*2) {
+		logger.Errorln("RX AckInfoEntry.from_buffer() FAILED with: Corrupt PDU")
+		return
+	}
 
+	// read missing fragments sequence nos
+	count := uint16(0)
+	nBytes := ack_info_header_len
+	missing := []uint16{}
+	var seq uint16
+	for count < ackInfoHeader.MissingLen {
+		num := data[nBytes : nBytes+2]
+		buf.Write(num)
+		binary.Read(&buf, binary.LittleEndian, seq)
+		missing = append(missing, seq)
+		buf.Reset()
+		nBytes += 2
+	}
+
+	// read options
+	ackInfoOptions := ackInfoEntryOptionsEncoder{}
+	buf.Write(data[nBytes:])
+	binary.Read(&buf, binary.LittleEndian, &ackInfoOptions)
+
+	ae.missingSeqnos = &missing
+	ae.seqnohi = ackInfoHeader.Seqnohi
+	ae.remoteIP = ipInt32ToString(ackInfoHeader.RemoteID)
+	ae.msid = ackInfoHeader.Msid
+	ae.tsval = ackInfoOptions.Tsval
+	ae.tsecr = ackInfoOptions.Tsecr
 }

@@ -73,16 +73,38 @@ func (tp *clientTransport) sendCast(data []byte) {
 	tp.mConn.Write(data)
 }
 
+func (tp *clientTransport) onACKPDU(data []byte) {
+	ackPDU := ackPDU{}
+	ackPDU.fromBuffer(data)
+	ackPDU.log("SND")
+}
+
 // listen for ack
 func (tp *clientTransport) listenForAck() {
 	logger.Infof("socket listening for ack on: %s", tp.mConn.LocalAddr().String())
 	buf := make([]byte, 1024)
 	for {
 		n, srcAddr, err := tp.uConn.ReadFromUDP(buf)
+		b := make([]byte, n)
+		copy(b, buf)
 		if err != nil {
 			continue
 		}
-		logger.Infof("Received message from %s: %s\n", srcAddr.String(), string(buf[:n]))
+		go tp.proceddPDU(b, srcAddr.String())
+	}
+}
+
+func (tp *clientTransport) proceddPDU(data []byte, srcIP string) {
+	pdu := PDU{}
+	pdu.fromBuffer(data)
+	pdu.log("SND")
+
+	logger.Debugf("SND | Received packet from %s type: %d len:%d", srcIP, pdu.PduType, pdu.Len)
+
+	if pdu.PduType == uint8(Ack) {
+		tp.onACKPDU(data)
+	} else {
+		logger.Debugf("Received unkown PDU type %d", pdu.PduType)
 	}
 }
 

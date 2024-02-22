@@ -207,12 +207,12 @@ type ackPDUEncoder struct {
 }
 
 type ackInfoEntryEncoder struct {
-	Length       uint16
-	Reserved     uint16
-	Seqnohi      uint16
-	RemoteID     int32 // ip of addr pdu sender(remote ip addr)
-	Msid         int32
-	MissingCount uint16
+	Length     uint16
+	Reserved   uint16
+	Seqnohi    uint16
+	RemoteID   int32 // ip of addr pdu sender(remote ip addr)
+	Msid       int32
+	MissingLen uint16
 }
 
 type ackInfoEntryOptionsEncoder struct {
