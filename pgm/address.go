@@ -205,7 +205,7 @@ func (addr *addressPDU) isRecepient(ip string) bool {
 
 func (add *addressPDU) getDestList() []string {
 	dests := []string{}
-	for _ , val := range *add.dst_entries {
+	for _, val := range *add.dst_entries {
 		dests = append(dests, val.dest_ipaddr)
 	}
 

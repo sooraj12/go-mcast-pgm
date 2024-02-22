@@ -14,6 +14,7 @@ const (
 	min_pdu_delay         time.Duration = 10 //msec
 	ack_pdu_delay_msec    time.Duration = 500
 	minimum_addr_pdu_len  int           = 32
+	max_addr_pdu_len      int           = 100
 	destination_entry_len int           = 8
 	opt_ts_val_len        int           = 12
 	minimun_packet_len    int           = 4

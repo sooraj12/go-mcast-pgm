@@ -137,20 +137,22 @@ type clientProtocol struct {
 
 // server
 type server struct {
-	state     chan serverState
-	event     chan *severEventChan
-	currState serverState
-	msid      int32
-	remoteIP string
-	dests *[]string
+	state           chan serverState
+	event           chan *severEventChan
+	currState       serverState
+	msid            int32
+	remoteIP        string
+	dests           *[]string
 	mcastACKTimeout time.Duration
-	startTimestamp time.Time
-	received  *map[int]int
-	fragments          *map[int]*[]byte
-	pduTimerChan <-chan time.Time
-	ackTimerChan <- chan time.Time
-	pduTimer *time.Timer
-	ackTimer *time.Timer
+	startTimestamp  time.Time
+	received        *map[int]int
+	fragments       *map[int]*[]byte
+	pduTimerChan    <-chan time.Time
+	ackTimerChan    <-chan time.Time
+	pduTimer        *time.Timer
+	ackTimer        *time.Timer
+	rxDatarate      float64
+	transport       *serverTransport
 }
 
 type severEventChan struct {
@@ -170,6 +172,16 @@ type serverTransport struct {
 type serverProtocol struct {
 	transport *serverTransport
 	conf      *mcastConfig
+}
+
+type ackPDU struct {
+	srcIP       string
+	infoEntries *[]ackInfoEntry
+}
+
+type ackInfoEntry struct {
+	Seqnohi uint16
+	SrcID   int32
 }
 
 type PDU struct {

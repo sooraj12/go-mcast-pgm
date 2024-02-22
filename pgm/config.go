@@ -34,6 +34,7 @@ type pgmConfig struct {
 	min_retry_timeout time.Duration
 	max_retry_count   int
 	max_ack_timeout   time.Duration
+	rtt_extra_delay   time.Duration
 }
 
 var pgmConf *pgmConfig = &pgmConfig{
@@ -49,6 +50,7 @@ var pgmConf *pgmConfig = &pgmConfig{
 	min_retry_timeout: 250,
 	max_retry_count:   3,
 	max_ack_timeout:   120000,
+	rtt_extra_delay:   1000,
 	cwnds: []map[string]float64{
 		{"datarate": 3000, "cwnd": 3000},
 		{"datarate": 6000, "cwnd": 5000}, // 3000 < x < 6000

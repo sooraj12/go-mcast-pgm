@@ -1,12 +1,15 @@
 package pgm
 
 import (
+	"bytes"
+	"fmt"
 	"logger"
 	"math/rand"
+	"net"
 	"time"
 )
 
-func (srv *server) init(msid int32, remoteIP string, destList *[]string) {
+func (srv *server) init(msid int32, remoteIP string, destList *[]string, tp *serverTransport) {
 	stateChan := make(chan *severEventChan)
 
 	srv.state = make(chan serverState)
@@ -18,6 +21,8 @@ func (srv *server) init(msid int32, remoteIP string, destList *[]string) {
 	srv.mcastACKTimeout = 0
 	srv.fragments = &map[int]*[]byte{}
 	srv.dests = destList
+	srv.rxDatarate = 0
+	srv.transport = tp
 }
 
 func (srv *server) sync() {
@@ -44,22 +49,22 @@ func (srv *server) timerSync() {
 	for {
 		select {
 		case <-srv.pduTimerChan:
-			srv.event<- &severEventChan{id: server_LastPduTimeout}
+			srv.event <- &severEventChan{id: server_LastPduTimeout}
 		case <-srv.ackTimerChan:
-			srv.event<- &severEventChan{id: server_AckPduTimeout}
+			srv.event <- &severEventChan{id: server_AckPduTimeout}
 		default:
 		}
 	}
 }
 
-func (srv *server) saveFragment(seqno int, payload *[]byte){
-	if _, ok := (*srv.fragments)[seqno]; !ok{
+func (srv *server) saveFragment(seqno int, payload *[]byte) {
+	if _, ok := (*srv.fragments)[seqno]; !ok {
 		(*srv.fragments)[seqno] = payload
 	}
 	logger.Debugf("RCV | Saved fragment %d with len %d", seqno, len(*payload))
 }
 
-func (srv *server) startPDUDelayTimer(d time.Duration){
+func (srv *server) startPDUDelayTimer(d time.Duration) {
 	if srv.pduTimer != nil {
 		srv.pduTimer.Stop()
 	}
@@ -67,13 +72,13 @@ func (srv *server) startPDUDelayTimer(d time.Duration){
 	srv.pduTimerChan = srv.pduTimer.C
 }
 
-func (srv *server) cancelPDUDelayTimer(){
+func (srv *server) cancelPDUDelayTimer() {
 	if srv.pduTimer != nil {
 		srv.pduTimer.Stop()
 	}
 }
 
-func (srv *server) startACKTimer(d time.Duration){
+func (srv *server) startACKTimer(d time.Duration) {
 	if srv.ackTimer != nil {
 		srv.ackTimer.Stop()
 	}
@@ -81,10 +86,38 @@ func (srv *server) startACKTimer(d time.Duration){
 	srv.ackTimerChan = srv.ackTimer.C
 }
 
-func (srv *server) cancelACKTimer(){
+func (srv *server) cancelACKTimer() {
 	if srv.ackTimer != nil {
 		srv.ackTimer.Stop()
 	}
+}
+
+func (srv *server) calcAckPDUTimeout() time.Duration {
+	datarate := srv.rxDatarate
+	if datarate == 0 {
+		datarate = default_air_datarate
+	}
+	messageLen := int64(max_addr_pdu_len)
+	timeout := pgmConf.rtt_extra_delay
+	factor := time.Duration(len(*srv.dests)) * ack_pdu_delay_msec
+	ratePerBits := time.Duration(messageLen * 8 * 1000 / int64(datarate))
+	timeout = timeout + factor + ratePerBits
+	logger.Debugf("RX AckPduTimeout: %d num_dests: %d", timeout, len(*srv.dests))
+	return timeout
+}
+
+func (srv *server) sendACK() {
+	ackPDU := ackPDU{}
+	ackPDU.init()
+
+	var pdu bytes.Buffer
+	ackPDU.toBuffer(&pdu)
+
+	remoteIP, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", srv.remoteIP, mcastConf.aport))
+	if err != nil {
+		logger.Errorln(err)
+	}
+	srv.transport.sendAckPDU(pdu.Bytes(), remoteIP)
 }
 
 func (srv *server) idle(ev *severEventChan) {
@@ -98,7 +131,7 @@ func (srv *server) idle(ev *severEventChan) {
 		srv.startTimestamp = time.Now()
 		srv.log()
 
-		if len(*addrPDU.payload) > 0{
+		if len(*addrPDU.payload) > 0 {
 			// single mode
 			(*srv.received)[0] = len(*addrPDU.payload)
 			srv.saveFragment(0, addrPDU.payload)
@@ -117,13 +150,32 @@ func (srv *server) idle(ev *severEventChan) {
 
 func (srv *server) receivingData(ev *severEventChan) {
 	logger.Debugf("RCV | state_RECEIVING_DATA: %#v", ev.id)
+
+	switch ev.id {
+	case server_LastPduTimeout:
+		srv.cancelPDUDelayTimer()
+
+		srv.sendACK()
+		timeout := time.Duration(srv.calcAckPDUTimeout() * time.Millisecond)
+		logger.Debugf("RCV | Start ACK_PDU timer with a %d msec timeout", timeout.Milliseconds())
+		srv.startACKTimer(timeout)
+		// change state to sent ack
+		logger.Debugf("RCV | RECEIVING_DATA - Change state to SENT_ACK")
+		srv.state <- server_SentAck
+	}
 }
 
-func (srv *server) sentAck(ev *severEventChan) {}
+func (srv *server) sentAck(ev *severEventChan) {
+	logger.Debugf("RCV | state_SENT_ACK: %d", ev.id)
+}
 
-func (srv *server) finished(ev *severEventChan) {}
+func (srv *server) finished(ev *severEventChan) {
+	logger.Debugf("RCV | state_FINISHED: %d", ev.id)
+	srv.cancelPDUDelayTimer()
+	srv.cancelACKTimer()
+}
 
-func (srv *server) log(){
+func (srv *server) log() {
 	logger.Debugf("RCV +--------------------------------------------------------------+")
 	logger.Debugf("RCV | RX Phase                                                     |")
 	logger.Debugf("RCV +--------------------------------------------------------------+")
@@ -133,6 +185,6 @@ func (srv *server) log(){
 	// logger.Debugf("RCV | total: %d", srv.total)
 	// logger.Debugf("RCV | seqnohi: {}", srv.seqnohi)
 	// logger.Debugf("RCV | tsVal: {}", srv.ts_val)
-	// logger.Debugf("RCV | rx_datarate: {}", srv.rx_datarate)
+	logger.Debugf("RCV | rx_datarate: %f", srv.rxDatarate)
 	logger.Debugf("RCV +--------------------------------------------------------------+")
 }

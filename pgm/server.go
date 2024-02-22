@@ -37,7 +37,7 @@ func (tp *serverTransport) onAddrPDU(data []byte) {
 
 		state := server{}
 		destList := addressPdu.getDestList()
-		state.init(msid, remoteIP, &destList)
+		state.init(msid, remoteIP, &destList, tp)
 
 		(*tp.rx_ctx_list)[key] = state
 
@@ -56,6 +56,10 @@ func (tp *serverTransport) onAddrPDU(data []byte) {
 		// send event to state machine
 		val.event <- serverEvent
 	}
+}
+
+func (tp *serverTransport) sendAckPDU(pdu []byte, remoteIP *net.UDPAddr) {
+	tp.sock.WriteToUDP(pdu, remoteIP)
 }
 
 // server transport
