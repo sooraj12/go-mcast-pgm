@@ -103,7 +103,7 @@ type addrPDUHeaderEncoder struct {
 }
 
 type addressPDUOptionsEncoder struct {
-	Tsopt uint8
+	Tsopt TsOption
 	L     uint8
 	V     uint16
 	Tsval int64
@@ -146,13 +146,21 @@ type server struct {
 	mcastACKTimeout time.Duration
 	startTimestamp  time.Time
 	received        *map[int]int
-	fragments       *map[int]*[]byte
+	fragments       *map[uint16]*[]byte
 	pduTimerChan    <-chan time.Time
 	ackTimerChan    <-chan time.Time
 	pduTimer        *time.Timer
 	ackTimer        *time.Timer
 	rxDatarate      float64
 	transport       *serverTransport
+
+	total         uint16
+	cwnd          uint16
+	seqnohi       uint16
+	tsval         int64
+	tvalue        int64
+	ackRetryCount int
+	maxAddrPDULen uint16
 }
 
 type severEventChan struct {
@@ -175,13 +183,44 @@ type serverProtocol struct {
 }
 
 type ackPDU struct {
-	srcIP       string
+	srcIP       string // ip of ack emitter
 	infoEntries *[]ackInfoEntry
 }
 
 type ackInfoEntry struct {
-	Seqnohi uint16
-	SrcID   int32
+	missingSeqnos *[]uint16
+	seqnohi       uint16
+	remoteIP      string // ip of addr pdu sender(remote ip addr)
+	msid          int32
+	tsval         int64
+	tsecr         int64
+}
+
+type ackPDUEncoder struct {
+	Length     uint16
+	Priority   uint8
+	PduType    pduType
+	Map        uint16
+	CheckSum   uint16
+	SrcID      int32 // ip of ack emitter
+	AckInfoLen uint16
+}
+
+type ackInfoEntryEncoder struct {
+	Length       uint16
+	Reserved     uint16
+	Seqnohi      uint16
+	RemoteID     int32 // ip of addr pdu sender(remote ip addr)
+	Msid         int32
+	MissingCount uint16
+}
+
+type ackInfoEntryOptionsEncoder struct {
+	Tsval int64
+	Tsopt TsOption
+	L     uint8
+	V     uint16
+	Tsecr int64
 }
 
 type PDU struct {
@@ -252,3 +291,10 @@ type uniqKey struct {
 	remoteIP string
 	msid     int32
 }
+
+type TsOption uint8
+
+const (
+	Tsval TsOption = iota
+	TsEcr
+)

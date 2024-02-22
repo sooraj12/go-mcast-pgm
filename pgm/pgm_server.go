@@ -2,14 +2,12 @@ package pgm
 
 import (
 	"bytes"
-	"fmt"
 	"logger"
 	"math/rand"
-	"net"
 	"time"
 )
 
-func (srv *server) init(msid int32, remoteIP string, destList *[]string, tp *serverTransport) {
+func (srv *server) init(msid int32, remoteIP string, tp *serverTransport) {
 	stateChan := make(chan *severEventChan)
 
 	srv.state = make(chan serverState)
@@ -19,10 +17,17 @@ func (srv *server) init(msid int32, remoteIP string, destList *[]string, tp *ser
 	srv.remoteIP = remoteIP
 	srv.received = &map[int]int{}
 	srv.mcastACKTimeout = 0
-	srv.fragments = &map[int]*[]byte{}
-	srv.dests = destList
+	srv.fragments = &map[uint16]*[]byte{}
+	srv.dests = &[]string{}
 	srv.rxDatarate = 0
 	srv.transport = tp
+	srv.total = 0
+	srv.cwnd = 0
+	srv.seqnohi = 0
+	srv.tsval = 0
+	srv.tvalue = 0
+	srv.ackRetryCount = 0
+	srv.maxAddrPDULen = 0
 }
 
 func (srv *server) sync() {
@@ -57,7 +62,7 @@ func (srv *server) timerSync() {
 	}
 }
 
-func (srv *server) saveFragment(seqno int, payload *[]byte) {
+func (srv *server) saveFragment(seqno uint16, payload *[]byte) {
 	if _, ok := (*srv.fragments)[seqno]; !ok {
 		(*srv.fragments)[seqno] = payload
 	}
@@ -106,18 +111,47 @@ func (srv *server) calcAckPDUTimeout() time.Duration {
 	return timeout
 }
 
-func (srv *server) sendACK() {
+func (srv *server) updateMaxAddrPDULen(pduLen uint16) {
+	if pduLen > srv.maxAddrPDULen {
+		srv.maxAddrPDULen = pduLen
+	}
+}
+
+func (srv *server) getMissingFragments() *[]uint16 {
+	missed := []uint16{}
+	var i uint16
+	for i = 0; i < srv.seqnohi; i++ {
+		if _, ok := (*srv.fragments)[i]; !ok {
+			missed = append(missed, i)
+		}
+	}
+
+	return &missed
+}
+
+func (srv *server) calculateTvalue() time.Duration {
+	deltatime := time.Since(srv.startTimestamp)
+	tvalue := deltatime
+	return tvalue
+}
+
+func (srv *server) sendACK(seqnohi uint16, tsval int64, tvalue int64, missed *[]uint16) {
 	ackPDU := ackPDU{}
-	ackPDU.init()
+	ackPDU.init(seqnohi, srv.remoteIP, srv.msid, tsval, tvalue, missed)
 
 	var pdu bytes.Buffer
 	ackPDU.toBuffer(&pdu)
 
-	remoteIP, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", srv.remoteIP, mcastConf.aport))
-	if err != nil {
-		logger.Errorln(err)
-	}
-	srv.transport.sendAckPDU(pdu.Bytes(), remoteIP)
+	logger.Debugf("RCV | %s send AckPdu to %s of len %d with ts_ecr: %d tvalue: %d seqnohi: %d missing: %#v", getInterfaceIP().String(),
+		srv.remoteIP,
+		len(pdu.Bytes()),
+		tsval,
+		tvalue,
+		seqnohi,
+		*missed,
+	)
+
+	srv.transport.sendUDPTo(pdu.Bytes(), srv.remoteIP)
 }
 
 func (srv *server) idle(ev *severEventChan) {
@@ -128,7 +162,15 @@ func (srv *server) idle(ev *severEventChan) {
 		// initialize the reception phase
 		var addrPDU *addressPDU
 		addrPDU = ev.data.(*addressPDU)
+		dests := addrPDU.getDestList()
+
+		srv.dests = &dests
+		srv.total = addrPDU.total
 		srv.startTimestamp = time.Now()
+		srv.cwnd = addrPDU.cwnd
+		srv.seqnohi = addrPDU.seqnohi
+		srv.tsval = addrPDU.tsval
+		srv.updateMaxAddrPDULen(addrPDU.length())
 		srv.log()
 
 		if len(*addrPDU.payload) > 0 {
@@ -155,7 +197,10 @@ func (srv *server) receivingData(ev *severEventChan) {
 	case server_LastPduTimeout:
 		srv.cancelPDUDelayTimer()
 
-		srv.sendACK()
+		tvalue := srv.calculateTvalue()
+		srv.tvalue = tvalue.Milliseconds() - srv.mcastACKTimeout.Milliseconds()
+		missed := srv.getMissingFragments()
+		srv.sendACK(srv.seqnohi, srv.tsval, srv.tvalue, missed)
 		timeout := time.Duration(srv.calcAckPDUTimeout() * time.Millisecond)
 		logger.Debugf("RCV | Start ACK_PDU timer with a %d msec timeout", timeout.Milliseconds())
 		srv.startACKTimer(timeout)
@@ -181,10 +226,10 @@ func (srv *server) log() {
 	logger.Debugf("RCV +--------------------------------------------------------------+")
 	logger.Debugf("RCV | remote_ipaddr: %s", srv.remoteIP)
 	logger.Debugf("RCV | dests: %#v", srv.dests)
-	// logger.Debugf("RCV | cwnd: {}", srv.cwnd)
-	// logger.Debugf("RCV | total: %d", srv.total)
-	// logger.Debugf("RCV | seqnohi: {}", srv.seqnohi)
-	// logger.Debugf("RCV | tsVal: {}", srv.ts_val)
+	logger.Debugf("RCV | cwnd: %d", srv.cwnd)
+	logger.Debugf("RCV | total: %d", srv.total)
+	logger.Debugf("RCV | seqnohi: %d", srv.seqnohi)
+	logger.Debugf("RCV | tsVal: %d", srv.tsval)
 	logger.Debugf("RCV | rx_datarate: %f", srv.rxDatarate)
 	logger.Debugf("RCV +--------------------------------------------------------------+")
 }

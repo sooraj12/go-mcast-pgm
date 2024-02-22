@@ -36,8 +36,7 @@ func (tp *serverTransport) onAddrPDU(data []byte) {
 		addressPdu.log("RCV")
 
 		state := server{}
-		destList := addressPdu.getDestList()
-		state.init(msid, remoteIP, &destList, tp)
+		state.init(msid, remoteIP, tp)
 
 		(*tp.rx_ctx_list)[key] = state
 
@@ -58,8 +57,13 @@ func (tp *serverTransport) onAddrPDU(data []byte) {
 	}
 }
 
-func (tp *serverTransport) sendAckPDU(pdu []byte, remoteIP *net.UDPAddr) {
-	tp.sock.WriteToUDP(pdu, remoteIP)
+func (tp *serverTransport) sendUDPTo(pdu []byte, remoteIP string) {
+	IP, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", remoteIP, mcastConf.aport))
+	if err != nil {
+		logger.Errorln(err)
+	}
+
+	tp.sock.WriteToUDP(pdu, IP)
 }
 
 // server transport

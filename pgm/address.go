@@ -93,7 +93,7 @@ func (addr *addressPDU) toBuffer(b *bytes.Buffer) {
 	}
 
 	pduOptions := addressPDUOptionsEncoder{
-		Tsopt: 0,
+		Tsopt: Tsval,
 		L:     12,
 		V:     0,
 		Tsval: addr.tsval,
