@@ -182,7 +182,7 @@ func (addr *addressPDU) fromBuffer(data []byte) {
 	payload := data[nBytes:pduHeader.Length]
 
 	addr.init(
-		Address,
+		addr.pduType,
 		pduHeader.Total,
 		pduHeader.Cwnd,
 		pduHeader.Seqnohi,
