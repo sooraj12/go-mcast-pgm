@@ -253,7 +253,7 @@ type dataPDUEncoder struct {
 	Checksum  uint16
 	CwndSeqno uint16
 	Reserved  uint16
-	srcID     int32
+	SrcID     int32
 	Msid      int32
 }
 

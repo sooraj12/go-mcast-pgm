@@ -31,7 +31,7 @@ func (d *dataPDU) toBuffer(buf *bytes.Buffer) {
 		Seqno:     d.seqno,
 		CwndSeqno: d.cwndSeqno,
 		Reserved:  0,
-		srcID:     ipToInt32(d.srcIP),
+		SrcID:     ipToInt32(d.srcIP),
 		Msid:      d.msid,
 	}
 	err := binary.Write(buf, binary.LittleEndian, &pdu)
@@ -72,7 +72,7 @@ func (d *dataPDU) fromBuffer(data *[]byte) {
 	d.seqnohi = pduHeader.Seqnohi
 	d.cwndSeqno = pduHeader.CwndSeqno
 	d.seqno = pduHeader.Seqno
-	d.srcIP = ipInt32ToString(pduHeader.srcID)
+	d.srcIP = ipInt32ToString(pduHeader.SrcID)
 	d.msid = pduHeader.Msid
 
 	dt := (*data)[data_pdu_header_len:]
