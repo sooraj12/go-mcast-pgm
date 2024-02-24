@@ -94,12 +94,25 @@ func (tp *serverTransport) processPDU(data []byte) {
 		tp.onAddrPDU(data)
 	case uint8(Data):
 		tp.onDataPDU(data)
+	case uint8(ExtraAddress):
+		tp.onAddrPDU(data)
+	default:
+		logger.Infof("Received unkown PDU type %d", pdu.PduType)
 	}
+}
+
+func (tp *serverTransport) messageReceived(msid int32, message []byte, remoteIP string) {
+	logger.Debugf("RCV | Received message %d of len %d from %s", msid, len(message), remoteIP)
+	tp.protocol.messageReceived(message)
 }
 
 // server protocol
 func (pt *serverProtocol) Listen() {
 	go pt.transport.listerForDatagrams()
+}
+
+func (pt *serverProtocol) messageReceived(message []byte) {
+	logger.Infof("New message of length %d received, send to application", len(message))
 }
 
 func createServerTransport(protocol *serverProtocol) *serverTransport {

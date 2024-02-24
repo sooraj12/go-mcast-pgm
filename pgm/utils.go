@@ -1,6 +1,7 @@
 package pgm
 
 import (
+	"bytes"
 	"encoding/binary"
 	"logger"
 	"math"
@@ -65,6 +66,12 @@ func fragment(data []byte, mtu int) *[][]byte {
 		}
 	}
 	return &fragments
+}
+
+func reassemble(fragments *map[uint16]*[]byte, b *bytes.Buffer) {
+	for _, f := range *fragments {
+		b.Write(*f)
+	}
 }
 
 func getCwnd(cwndList *[]map[string]float64, airDatarate float64, defaultAirDatarate float64) float64 {

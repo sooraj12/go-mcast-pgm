@@ -212,6 +212,23 @@ func (srv *server) receivingData(ev *severEventChan) {
 
 func (srv *server) sentAck(ev *severEventChan) {
 	logger.Debugf("RCV | state_SENT_ACK: %d", ev.id)
+
+	switch ev.id {
+	case server_AddressPDU:
+		srv.cancelACKTimer()
+		addrPDU := ev.data.(*addressPDU)
+
+		if !addrPDU.isRecepient(getInterfaceIP().String()) {
+			// change state to finished
+			logger.Debugln("SND | change satte to FINISHED")
+			srv.state <- server_Finished
+			message := bytes.Buffer{}
+			reassemble(srv.fragments, &message)
+			srv.transport.messageReceived(srv.msid, message.Bytes(), srv.remoteIP)
+		}
+
+	case server_AckPduTimeout:
+	}
 }
 
 func (srv *server) finished(ev *severEventChan) {
