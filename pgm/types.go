@@ -9,7 +9,6 @@ import (
 type client struct {
 	message            *[]byte
 	transport          *clientTransport
-	dests              *[]nodeInfo
 	msid               int32
 	trafficType        Traffic
 	config             *pgmConfig
@@ -18,7 +17,7 @@ type client struct {
 	tx_datarate        float64
 	dest_status        *destStatus
 	fragments          *[][]byte
-	event              chan clientEvent
+	event              chan *clientEventChan
 	state              chan clientState
 	currState          clientState
 	tx_fragments       *txFragments
@@ -26,7 +25,7 @@ type client struct {
 	num_sent_data_pdus int
 	cwnd_seqno         int
 	useMinPDUDelay     bool
-	fragmentTxCount    *map[int]int
+	fragmentTxCount    *map[uint16]int
 	retry_timeout      time.Duration
 	air_datarate       float64
 	retry_timestamp    time.Time
@@ -34,6 +33,17 @@ type client struct {
 	retry_timer_chan   <-chan time.Time
 	pdu_timer          *time.Timer
 	retry_timer        *time.Timer
+	startTimestamp     time.Time
+}
+
+type clientEventChan struct {
+	id   clientEvent
+	data interface{}
+}
+
+type clientAckEvent struct {
+	remoteIP  string
+	infoEntry ackInfoEntry
 }
 
 type txFragment struct {
@@ -41,24 +51,24 @@ type txFragment struct {
 	len  int
 }
 
-type txFragments map[int]txFragment
+type txFragments map[uint16]*txFragment
 
-type destStatus map[string]destination
+type destStatus map[string]*destination
 
 type destination struct {
 	config              *pgmConfig
 	dest                string
 	completed           bool
 	ack_received        bool
-	last_received_tsecr int
+	last_received_tsecr int64
 	sent_data_count     int
 	missed_data_count   int
 	missed_ack_count    int
-	fragment_ack_status map[int]bool
+	fragment_ack_status map[uint16]bool
 	air_datarate        float64
 	retry_timeout       time.Duration
 	ack_timeout         time.Duration
-	missing_fragments   []int
+	missing_fragments   *[]uint16
 }
 
 type destinationEntry struct {
@@ -116,7 +126,7 @@ type clientTransport struct {
 	uConn     *net.UDPConn
 	nodesInfo *nodesInfo
 
-	tx_ctx_list *map[int]client
+	tx_ctx_list *map[int32]client
 }
 
 // destination info
@@ -127,7 +137,7 @@ type nodeInfo struct {
 	addr          string
 }
 
-type nodesInfo map[string]nodeInfo
+type nodesInfo map[string]*nodeInfo
 
 // client protocol
 type clientProtocol struct {

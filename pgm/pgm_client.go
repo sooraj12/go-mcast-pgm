@@ -3,28 +3,28 @@ package pgm
 import (
 	"bytes"
 	"logger"
+	"slices"
 	"time"
 )
 
-func initClient(tp *clientTransport, dests *[]nodeInfo, data *[]byte, msid int32, trafficType Traffic) client {
+func initClient(tp *clientTransport, dests *[]*nodeInfo, data *[]byte, msid int32, trafficType Traffic) client {
+	fragments := fragment(*data, pgmConf.mtu)
+	fragmentTxCount := &map[uint16]int{}
+	for i := range *fragments {
+		(*fragmentTxCount)[uint16(i)] = 0
+	}
+
 	dest_list := &[]string{}
 	dest_status := &destStatus{}
 	for _, val := range *dests {
 		*dest_list = append(*dest_list, val.addr)
 
-		(*dest_status)[val.addr] = initDestination(pgmConf, val.addr, 1, val.air_datarate, val.retry_timeout, val.ack_timeout)
-	}
-
-	fragments := fragment(*data, pgmConf.mtu)
-	fragmentTxCount := &map[int]int{}
-	for i := range *fragments {
-		(*fragmentTxCount)[i] = 0
+		(*dest_status)[val.addr] = initDestination(pgmConf, val.addr, uint16(len(*fragments)), val.air_datarate, val.retry_timeout, val.ack_timeout)
 	}
 
 	return client{
 		message:            data,
 		transport:          tp,
-		dests:              dests,
 		msid:               msid,
 		trafficType:        trafficType,
 		config:             pgmConf,
@@ -33,7 +33,7 @@ func initClient(tp *clientTransport, dests *[]nodeInfo, data *[]byte, msid int32
 		tx_datarate:        1,
 		dest_status:        dest_status,
 		fragments:          fragments,
-		event:              make(chan clientEvent),
+		event:              make(chan *clientEventChan),
 		state:              make(chan clientState),
 		currState:          Idle,
 		tx_fragments:       &txFragments{},
@@ -47,6 +47,7 @@ func initClient(tp *clientTransport, dests *[]nodeInfo, data *[]byte, msid int32
 		retry_timestamp:    time.Now(),
 		pdu_timer_chan:     make(chan time.Time),
 		retry_timer_chan:   make(chan time.Time),
+		startTimestamp:     time.Now(),
 	}
 }
 
@@ -77,9 +78,9 @@ func (cli *client) timerSync() {
 	for {
 		select {
 		case <-cli.retry_timer_chan:
-			cli.event <- RetransmissionTimeout
+			cli.event <- &clientEventChan{id: RetransmissionTimeout}
 		case <-cli.pdu_timer_chan:
-			cli.event <- PduDelayTimeout
+			cli.event <- &clientEventChan{id: PduDelayTimeout}
 		// fixme : remove this costly default,
 		// but then the channel becomes blocking
 		default:
@@ -88,11 +89,11 @@ func (cli *client) timerSync() {
 }
 
 func (cli *client) getSeqnohi() uint16 {
-	seqno := 0
+	seqno := uint16(0)
 	for key := range *cli.tx_fragments {
 		seqno = key
 	}
-	return uint16(seqno)
+	return seqno
 }
 
 func (cli *client) incNumOfSentDataPDU() {
@@ -100,7 +101,6 @@ func (cli *client) incNumOfSentDataPDU() {
 		if dest, ok := (*cli.dest_status)[val]; ok {
 			dest.sent_data_count += 1
 		}
-
 	}
 }
 
@@ -126,9 +126,9 @@ func (cli *client) unAckFragments(cwnd float64) (unAckList *txFragments) {
 	curr := 0
 	for i, fr := range *cli.fragments {
 		for _, dest := range *cli.dest_status {
-			if !dest.fragment_ack_status[i] {
-				if _, ok := (*unAckList)[i]; !ok {
-					(*unAckList)[i] = txFragment{
+			if !dest.fragment_ack_status[uint16(i)] {
+				if _, ok := (*unAckList)[uint16(i)]; !ok {
+					(*unAckList)[uint16(i)] = &txFragment{
 						sent: false,
 						len:  len(fr),
 					}
@@ -200,7 +200,7 @@ func (cli *client) initTxn(timeoutOccured bool) {
 	// loss detection for each destination
 	for _, dest := range *cli.dest_status {
 		dest.updateMissedDataCnt()
-		dest.missing_fragments = []int{}
+		dest.missing_fragments = &[]uint16{}
 	}
 
 	// address pdu initialization
@@ -375,13 +375,117 @@ func (cli *client) cancelPDUTimer() {
 	}
 }
 
-func (cli *client) idle(event clientEvent) {
-	logger.Debugf("SND | IDLE: %d", event)
+func (cli *client) calcReceivedBytes(fragID uint16) int {
+	count := 0
+	for key := range *cli.tx_fragments {
+		if key > fragID {
+			count += pgmConf.mtu
+		}
+	}
+
+	return count
+}
+
+func (cli *client) getFirstReceivedFragID(missing *[]uint16) uint16 {
+	for key := range *cli.tx_fragments {
+		if slices.Contains(*missing, key) {
+			return key
+		}
+	}
+
+	return 0
+}
+
+func (cli *client) calcAirdatarate(remoteIP string, tsecr int64, missing *[]uint16, tvalue int64) (airDatarate float64) {
+	if len(*cli.tx_fragments) == 0 {
+		return 0 // nothing was sent
+	}
+
+	if tsecr != 0 {
+		// address pdu was received
+		sentBytes := getSentBytes(cli.tx_fragments)
+		airDatarate = round(float64(sentBytes*8*1000) / float64(tvalue))
+		logger.Debugf("TX: %s measured air-datarate: %f bit/s send-bytes: %d tValue: %d", remoteIP, airDatarate, sentBytes, tvalue)
+	} else {
+		// address wasn't received
+		fragID := cli.getFirstReceivedFragID(missing)
+		count := cli.calcReceivedBytes(fragID)
+		airDatarate = round(float64(count) * 8 * 1000 / float64(tvalue))
+		logger.Debugf("TX: %s measured air-datarate: %f bit/s 1st rx-fragment: %d end-bytes: %d tValue: %d", remoteIP, airDatarate, fragID, count, tvalue)
+	}
+
+	return
+}
+
+func (cli *client) receivedAllAcks() bool {
+	for _, dest := range *cli.dest_status {
+		if !dest.ack_received {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (cli *client) calcGoodput() float64 {
+	var datarate float64
+	d := time.Since(cli.startTimestamp).Milliseconds()
+	receivedBytes := cli.messageLen()
+	if d > 0 {
+		datarate = float64(receivedBytes) * 8 * 1000 / float64(d)
+	}
+
+	logger.Infof("RCV | Datarate(): %f Received bytes: %d Interval: %d", datarate, receivedBytes, d)
+
+	return round(datarate)
+}
+
+func (cli *client) messageLen() (count int) {
+	count = 0
+	for _, val := range *cli.fragments {
+		count += len(val)
+	}
+	return
+}
+
+func (cli *client) getDeliveryReport() map[string]interface{} {
+	deliveryTime := time.Since(cli.startTimestamp).Milliseconds()
+	loss := 100 * (cli.num_sent_data_pdus - len(*cli.fragments)) / len(*cli.fragments)
+
+	status := map[string]interface{}{}
+	status["tx_datarate"] = cli.tx_datarate
+	status["goodput"] = cli.calcGoodput()
+	status["delivery_time"] = deliveryTime
+	status["num_data_pdus"] = len(*cli.fragments)
+	status["num_sent_data_pdus"] = cli.num_sent_data_pdus
+	status["loss"] = loss
+
+	return status
+}
+
+func (cli *client) showDeliveryReport() {
+	ackStatus := map[string]map[string]interface{}{}
+	for addr, dest := range *cli.dest_status {
+		ackStatus[addr] = map[string]interface{}{}
+		ackStatus[addr]["ack_status"] = dest.completed
+		ackStatus[addr]["ack_timeout"] = dest.ack_timeout
+		ackStatus[addr]["retry_timeout"] = dest.retry_timeout
+		ackStatus[addr]["retry_count"] = cli.getMaxRetryCount()
+		ackStatus[addr]["num_sent"] = dest.sent_data_count
+		ackStatus[addr]["air_datarate"] = dest.air_datarate
+		ackStatus[addr]["missed"] = dest.missed_data_count
+	}
+
+	cli.transport.transmissionFinished(cli.msid, cli.getDeliveryReport(), ackStatus)
+}
+
+func (cli *client) idle(event *clientEventChan) {
+	logger.Debugf("SND | IDLE: %#v", *event)
 	// cancel pdu timer and retransmission timer
 	cli.cancelRetryTimer()
 	cli.cancelPDUTimer()
 
-	switch event {
+	switch event.id {
 	case Start:
 		// init transaction
 		cli.initTxn(false)
@@ -407,11 +511,8 @@ func (cli *client) idle(event clientEvent) {
 		cli.seqno += 1
 		if cli.trafficType == Message {
 			addrPDU.payload = &(*cli.fragments)[0]
-			fragment := txFragment{
-				sent: true,
-				len:  len(*addrPDU.payload),
-			}
-			(*cli.tx_fragments)[0] = fragment
+			(*cli.tx_fragments)[0].sent = true
+			(*cli.tx_fragments)[0].len = len(*addrPDU.payload)
 			cli.incNumOfSentDataPDU()
 			cli.num_sent_data_pdus += 1
 		}
@@ -432,24 +533,145 @@ func (cli *client) idle(event clientEvent) {
 			logger.Debugf("SND | IDLE - start PDU Delay timer with a %d msec timeout", min_pdu_delay)
 			cli.startPDUTimer(min_pdu_delay)
 			logger.Debugf("SND | IDLE - Change state to SENDING_DATA")
+			cli.state <- SendingData
 		}
 	}
 }
 
-func (cli *client) sendingData(event clientEvent) {
-	logger.Debugf("SND | SENDING_DATA: %d", event)
+func (cli *client) sendingData(event *clientEventChan) {
+	logger.Debugf("SND | SENDING_DATA: %#v", *event)
 }
 
-func (cli *client) sendingExtraAddr(event clientEvent) {
-	logger.Debugf("SND | SENDING_EXTRA_ADDRESS_PDU: %d", event)
+func (cli *client) sendingExtraAddr(event *clientEventChan) {
+	logger.Debugf("SND | SENDING_EXTRA_ADDRESS_PDU: %#v", event)
 }
 
-func (cli *client) waitingForAck(event clientEvent) {
-	logger.Debugf("SND | WAITING_FOR_ACKS: %v", event)
+func (cli *client) waitingForAck(event *clientEventChan) {
+	logger.Debugf("SND | WAITING_FOR_ACKS: %#v", *event)
+
+	switch event.id {
+	case AckPdu:
+		eventData := event.data.(clientAckEvent)
+		remoteIP := eventData.remoteIP
+		infoEntry := eventData.infoEntry
+
+		// check if ack sender is in our destination list
+		if !slices.Contains(*cli.dest_list, remoteIP) {
+			logger.Debugf("TX: Ignore Ack from %s", remoteIP)
+			return
+		}
+		if destStatus, ok := (*cli.dest_status)[remoteIP]; !ok {
+			logger.Debugf("TX: Ignore Ack from %s", remoteIP)
+			return
+		} else {
+			// update ack status of each fragment
+			destStatus.updateFragmentAckStatus(infoEntry.missingSeqnos, infoEntry.seqnohi)
+			// if this ack pdu with the same timestamp hasn't been received before
+			// we update the retry timeout and ack timeout
+			if !destStatus.isDuplicate(infoEntry.tsecr) {
+				// update retry timeout for the destination
+				destStatus.updateRetryTimeout(infoEntry.tsecr)
+				// update ack timeout for the destination
+				destStatus.updateAckTimeout(infoEntry.tsecr, infoEntry.tsval)
+			}
+			// we have received an ack for the remote address
+			destStatus.ack_received = true
+
+			// update the airdatarate based on the recieved tvalue
+			if infoEntry.tsval > 0 {
+				airDatarate := cli.calcAirdatarate(remoteIP, infoEntry.tsecr, infoEntry.missingSeqnos, infoEntry.tsval)
+				logger.Debugf("TX Measured air-datarate: %f and tvalue: %d sec", airDatarate, infoEntry.tsval)
+				// prevent increase of airdatarate in a wrong case
+				if airDatarate > cli.tx_datarate {
+					logger.Debugf("SND | air-datarate %f is larger than tx-datarate - Update air-datarate to %f", airDatarate, cli.tx_datarate)
+					destStatus.updateAirDatarate(cli.tx_datarate)
+				} else {
+					destStatus.updateAirDatarate(airDatarate)
+				}
+			}
+			destStatus.log()
+
+			// if we have received all the ack pdus we can continue with the next
+			// transmission phase sending data pdu retransmissions. if ack pdus are
+			// still missing we continue waiting
+			if cli.receivedAllAcks() {
+				cli.cancelRetryTimer()
+				cli.initTxn(false)
+
+				if cli.getMaxRetryCount() > cli.config.max_retry_count {
+					logger.Debugln("SND | Max Retransmission Count Reached")
+					logger.Debugln("SND | change state to Idle")
+					cli.state <- Idle
+
+					// inform transport that message delivery is finished
+					cli.showDeliveryReport()
+				}
+
+				// send addr pdu
+				addrPDU := addressPDU{}
+				destEntries := []destinationEntry{}
+				for _, val := range *cli.dest_list {
+					entry := destinationEntry{
+						dest_ipaddr: val,
+						seqno:       cli.seqno,
+					}
+
+					destEntries = append(destEntries, entry)
+				}
+				addrPDU.init(uint16(len(*cli.fragments)),
+					uint16(len(*cli.tx_fragments)),
+					cli.getSeqnohi(),
+					cli.msid,
+					time.Now().UnixMilli(),
+					getInterfaceIP().String(),
+					&destEntries,
+				)
+				cli.seqno += 1
+
+				if cli.trafficType == Message && len(*cli.dest_list) > 0 {
+					addrPDU.payload = &(*cli.fragments)[0]
+					(*cli.tx_fragments)[0].sent = true
+					(*cli.tx_fragments)[0].len = len(*addrPDU.payload)
+					cli.incNumOfSentDataPDU()
+					cli.num_sent_data_pdus += 1
+				}
+				addrPDU.log("SND")
+				var pdu bytes.Buffer
+				addrPDU.toBuffer(&pdu)
+				cli.transport.sendCast(pdu.Bytes())
+
+				if len(*cli.dest_list) > 0 {
+					if cli.trafficType == Message {
+						timeout := time.Until(cli.retry_timestamp)
+						cli.cancelRetryTimer()
+						cli.startRetryTimer(timeout)
+						logger.Debugf("SND | start Retransmission timer with %d msec delay", timeout.Milliseconds())
+						cli.state <- WaitingForAcks
+						logger.Debugln("SND | changed state to WAITING_FOR_ACKS")
+					} else {
+						logger.Debugf("SND | IDLE - start PDU Delay timer with a %d msec timeout", min_pdu_delay)
+						cli.startPDUTimer(min_pdu_delay)
+						logger.Debugf("SND | IDLE - Change state to SENDING_DATA")
+						cli.state <- SendingData
+					}
+				} else {
+					// change state to finished
+					cli.cancelRetryTimer()
+					logger.Debugln("SND | change state to FINISHED")
+					cli.state <- Finished
+
+					// inform transport that message delivery is finished
+					cli.showDeliveryReport()
+				}
+			}
+		}
+
+	case RetransmissionTimeout:
+	}
 }
 
-func (cli *client) finished(event clientEvent) {
-	logger.Debugf("SND | FINISHED: %v", event)
+func (cli *client) finished(event *clientEventChan) {
+	logger.Debugf("SND | FINISHED: %#v", *event)
 }
 
 func (cli *client) log(state string) {

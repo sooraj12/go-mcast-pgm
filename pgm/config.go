@@ -46,7 +46,7 @@ var pgmConf *pgmConfig = &pgmConfig{
 	max_increase:      0.25,
 	max_decrease:      0.75,
 	initial_cwnd:      5000,
-	max_retry_timeout: 240000,
+	max_retry_timeout: time.Duration(240000 * time.Millisecond),
 	min_retry_timeout: 250,
 	max_retry_count:   3,
 	max_ack_timeout:   120000,

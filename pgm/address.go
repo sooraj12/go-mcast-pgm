@@ -60,6 +60,7 @@ func (addr *addressPDU) init(total uint16, cwnd uint16, seqnohi uint16, msid int
 	addr.tsval = tsval
 	addr.srcIP = srcIP
 	addr.dst_entries = destEntries
+	addr.payload = &[]byte{}
 }
 
 func (addr *addressPDU) length() uint16 {

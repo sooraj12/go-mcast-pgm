@@ -6,12 +6,13 @@ import (
 	"math/rand"
 	"net"
 	"os"
+	"time"
 )
 
 // client transport
-func (tp *clientTransport) generateMSID() int {
+func (tp *clientTransport) generateMSID() int32 {
 	for i := 0; i < 1000; i++ {
-		msid := rand.Intn(10000000)
+		msid := rand.Int31()
 		if _, ok := (*tp.tx_ctx_list)[msid]; !ok {
 			return msid
 		}
@@ -28,19 +29,18 @@ func (tp *clientTransport) initSend(data []byte, destIPS []string, trafficType T
 	}
 
 	// convert IPv4 addresses from string format into 32bit values
-	dests := []nodeInfo{}
+	dests := []*nodeInfo{}
 	for _, ip := range destIPS {
-		entry := nodeInfo{}
+		entry := &nodeInfo{}
 		entry.addr = ip
 		if node, ok := (*tp.nodesInfo)[ip]; !ok {
 			entry.air_datarate = default_air_datarate
 			entry.ack_timeout = default_ack_timeout
 			entry.retry_timeout = default_retry_timeout
 		} else {
-			n := node
-			entry.air_datarate = n.air_datarate
-			entry.ack_timeout = n.ack_timeout
-			entry.retry_timeout = n.retry_timeout
+			entry.air_datarate = node.air_datarate
+			entry.ack_timeout = node.ack_timeout
+			entry.retry_timeout = node.retry_timeout
 		}
 
 		dests = append(dests, entry)
@@ -56,7 +56,7 @@ func (tp *clientTransport) initSend(data []byte, destIPS []string, trafficType T
 	// start timer sync
 	go state.timerSync()
 	// send start event to start the state machine at idle state
-	state.event <- Start
+	state.event <- &clientEventChan{id: Start}
 }
 
 func (tp *clientTransport) sendMessage(data []byte, destIPS []string) {
@@ -77,6 +77,23 @@ func (tp *clientTransport) onACKPDU(data []byte) {
 	ackPDU := ackPDU{}
 	ackPDU.fromBuffer(data)
 	ackPDU.log("SND")
+
+	for _, info := range *ackPDU.infoEntries {
+		if info.remoteIP != getInterfaceIP().String() {
+			continue // ack is not addressed to me
+		}
+		if ctx, ok := (*tp.tx_ctx_list)[info.msid]; ok {
+			event := clientAckEvent{
+				remoteIP:  ackPDU.srcIP,
+				infoEntry: info,
+			}
+
+			go ctx.sync()
+			go ctx.timerSync()
+			ctx.event <- &clientEventChan{id: AckPdu, data: event}
+		}
+
+	}
 }
 
 // listen for ack
@@ -108,10 +125,30 @@ func (tp *clientTransport) proceddPDU(data []byte, srcIP string) {
 	}
 }
 
+func (tp *clientTransport) transmissionFinished(msid int32, deliveryStatus map[string]interface{}, ackStatus map[string]map[string]interface{}) {
+	if _, ok := (*tp.tx_ctx_list)[msid]; ok {
+		for addr, val := range ackStatus {
+			if _, ok := (*tp.nodesInfo)[addr]; !ok {
+				(*tp.nodesInfo)[addr] = &nodeInfo{
+					air_datarate:  val["air_datarate"].(float64),
+					ack_timeout:   val["ack_timeout"].(time.Duration),
+					retry_timeout: val["retry_timeout"].(time.Duration),
+					addr:          addr,
+				}
+			}
+		}
+		tp.protocol.deliveryCompleted(msid, deliveryStatus, ackStatus)
+	}
+}
+
 // client protocol
 func (cp *clientProtocol) SendMessage(data []byte, destIPS []string) {
 	logger.Debugf("SND | sending message of len %d before encoding", len(data))
 	cp.transport.sendMessage(data, destIPS)
+}
+
+func (cp *clientProtocol) deliveryCompleted(msid int32, deliveryStatus map[string]interface{}, ackStatus map[string]map[string]interface{}) {
+	logger.Debugf("Delivery of Message-ID %d finished with %#v %#v", msid, deliveryStatus, ackStatus)
 }
 
 func createClientTransport(protocol *clientProtocol) (t *clientTransport) {
@@ -151,7 +188,7 @@ func createClientTransport(protocol *clientProtocol) (t *clientTransport) {
 		mConn:       multicastConn,
 		uConn:       unicastConnection,
 		nodesInfo:   &nodesInfo{},
-		tx_ctx_list: &map[int]client{},
+		tx_ctx_list: &map[int32]client{},
 	}
 
 	// listen for ack from servers in the background

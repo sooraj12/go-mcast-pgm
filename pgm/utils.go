@@ -91,6 +91,20 @@ func max(x, y float64) float64 {
 	return x
 }
 
+func minInt64(x, y int64) int64 {
+	if x > y {
+		return y
+	}
+	return x
+}
+
+func maxInt64(x, y int64) int64 {
+	if x < y {
+		return y
+	}
+	return x
+}
+
 func round(val float64) float64 {
 	return math.Round(val*100) / 100
 }
@@ -115,4 +129,13 @@ func ipInt32ToString(n int32) string {
 
 	// Convert the IP type to a string
 	return ip.String()
+}
+
+func getSentBytes(fragments *txFragments) int {
+	count := 0
+	for _, val := range *fragments {
+		count = count + val.len
+	}
+
+	return count
 }
