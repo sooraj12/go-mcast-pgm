@@ -2,6 +2,7 @@ package main
 
 import (
 	"pgm"
+	"strings"
 	"sync"
 )
 
@@ -10,6 +11,7 @@ func main() {
 	destIPS := []string{"192.168.1.2"}
 	client := pgm.CreateClientProtocol()
 	wait.Add(1)
-	go client.SendMessage([]byte("message"), destIPS)
+	str := strings.Repeat("m", 1700)
+	go client.SendMessage([]byte(str), destIPS)
 	wait.Wait()
 }

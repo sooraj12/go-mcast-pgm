@@ -23,7 +23,7 @@ type client struct {
 	tx_fragments       *txFragments
 	seqno              int32
 	num_sent_data_pdus int
-	cwnd_seqno         int
+	cwnd_seqno         uint16
 	useMinPDUDelay     bool
 	fragmentTxCount    *map[uint16]int
 	retry_timeout      time.Duration
@@ -231,6 +231,30 @@ type ackInfoEntryOptionsEncoder struct {
 	L     uint8
 	V     uint16
 	Tsecr int64
+}
+
+type dataPDU struct {
+	cwnd      uint16
+	seqnohi   uint16
+	cwndSeqno uint16
+	seqno     uint16
+	srcIP     string
+	msid      int32
+	data      *[]byte
+}
+
+type dataPDUEncoder struct {
+	Length    uint16
+	Priority  uint8
+	PduType   uint8
+	Cwnd      uint16
+	Seqnohi   uint16
+	Seqno     uint16
+	Checksum  uint16
+	CwndSeqno uint16
+	Reserved  uint16
+	srcID     int32
+	Msid      int32
 }
 
 type PDU struct {

@@ -49,8 +49,8 @@ import (
 // +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 //
 
-func (addr *addressPDU) init(total uint16, cwnd uint16, seqnohi uint16, msid int32, tsval int64, srcIP string, destEntries *[]destinationEntry) {
-	addr.pduType = Address
+func (addr *addressPDU) init(pduType pduType, total uint16, cwnd uint16, seqnohi uint16, msid int32, tsval int64, srcIP string, destEntries *[]destinationEntry) {
+	addr.pduType = pduType
 	addr.total = total
 	addr.cwnd = cwnd
 	addr.seqnohi = seqnohi
@@ -182,6 +182,7 @@ func (addr *addressPDU) fromBuffer(data []byte) {
 	payload := data[nBytes:pduHeader.Length]
 
 	addr.init(
+		Address,
 		pduHeader.Total,
 		pduHeader.Cwnd,
 		pduHeader.Seqnohi,

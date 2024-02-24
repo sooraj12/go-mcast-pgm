@@ -479,6 +479,25 @@ func (cli *client) showDeliveryReport() {
 	cli.transport.transmissionFinished(cli.msid, cli.getDeliveryReport(), ackStatus)
 }
 
+func (cli *client) getNextTxFragment() uint16 {
+	for i, f := range *cli.tx_fragments {
+		if !f.sent {
+			return i
+		}
+	}
+
+	return 0
+}
+
+func (cli *client) isFinalFragment(seqno uint16) bool {
+	lastID := -1
+	for key := range *cli.tx_fragments {
+		lastID = int(key)
+	}
+
+	return int(seqno) == lastID
+}
+
 func (cli *client) idle(event *clientEventChan) {
 	logger.Debugf("SND | IDLE: %#v", *event)
 	// cancel pdu timer and retransmission timer
@@ -500,7 +519,7 @@ func (cli *client) idle(event *clientEventChan) {
 			destEntries = append(destEntries, entry)
 		}
 		addrPDU := addressPDU{}
-		addrPDU.init(uint16(len(*cli.fragments)),
+		addrPDU.init(Address, uint16(len(*cli.fragments)),
 			uint16(len(*cli.tx_fragments)),
 			cli.getSeqnohi(),
 			cli.msid,
@@ -519,7 +538,8 @@ func (cli *client) idle(event *clientEventChan) {
 		addrPDU.log("SND")
 		var pdu bytes.Buffer
 		addrPDU.toBuffer(&pdu)
-		cli.transport.sendCast(pdu.Bytes())
+		pduBytes := pdu.Bytes()
+		cli.transport.sendCast(&pduBytes)
 
 		// start timers
 		if cli.trafficType == Message {
@@ -540,10 +560,96 @@ func (cli *client) idle(event *clientEventChan) {
 
 func (cli *client) sendingData(event *clientEventChan) {
 	logger.Debugf("SND | SENDING_DATA: %#v", *event)
+
+	if event.id == PduDelayTimeout {
+		cli.cancelPDUTimer()
+
+		// send data pdu
+		datapdu := dataPDU{}
+		seqno := cli.getNextTxFragment()
+		data := (*cli.fragments)[seqno]
+		datapdu.init(
+			uint16(len(*cli.tx_fragments)),
+			cli.getSeqnohi(),
+			cli.msid,
+			seqno,
+			cli.cwnd_seqno,
+			&data,
+		)
+		datapdu.log("SND")
+
+		pdu := bytes.Buffer{}
+		datapdu.toBuffer(&pdu)
+		logger.Debugf("SND | SND DataPdu[%d] len: %d cwnd_seqno: %d", datapdu.seqno, len(*datapdu.data), datapdu.cwndSeqno)
+		pduBytes := pdu.Bytes()
+		cli.transport.sendCast(&pduBytes)
+		(*cli.tx_fragments)[datapdu.seqno].sent = true
+		(*cli.tx_fragments)[datapdu.seqno].len = len(*datapdu.data)
+		cli.incNumOfSentDataPDU()
+		cli.num_sent_data_pdus += 1
+
+		logger.Debugf("SND | SENDING_DATA - start PDU Delay timer with a %d msec timeout", cli.pdu_delay)
+		cli.startPDUTimer(cli.pdu_delay)
+
+		if cli.isFinalFragment(datapdu.seqno) {
+			logger.Debugf("SND | SENDING_DATA - Change state to SENDING_EXTRA_ADDRESS_PDU")
+			cli.state <- SendingExtraAddressPdu
+		}
+	}
 }
 
 func (cli *client) sendingExtraAddr(event *clientEventChan) {
 	logger.Debugf("SND | SENDING_EXTRA_ADDRESS_PDU: %#v", event)
+
+	switch event.id {
+	case PduDelayTimeout:
+		cli.cancelPDUTimer()
+
+		// send address pdu
+		destEntries := []destinationEntry{}
+		for _, val := range *cli.dest_list {
+			entry := destinationEntry{
+				dest_ipaddr: val,
+				seqno:       cli.seqno,
+			}
+
+			destEntries = append(destEntries, entry)
+		}
+		addrPDU := addressPDU{}
+		addrPDU.init(
+			ExtraAddress,
+			uint16(len(*cli.fragments)),
+			uint16(len(*cli.tx_fragments)),
+			cli.getSeqnohi(),
+			cli.msid,
+			time.Now().UnixMilli(),
+			getInterfaceIP().String(),
+			&destEntries,
+		)
+		cli.seqno += 1
+		if cli.trafficType == Message {
+			addrPDU.payload = &(*cli.fragments)[0]
+			(*cli.tx_fragments)[0].sent = true
+			(*cli.tx_fragments)[0].len = len(*addrPDU.payload)
+			cli.incNumOfSentDataPDU()
+			cli.num_sent_data_pdus += 1
+		}
+		addrPDU.log("SND")
+		var pdu bytes.Buffer
+		addrPDU.toBuffer(&pdu)
+		pduBytes := pdu.Bytes()
+		cli.transport.sendCast(&pduBytes)
+
+		// start retransmission timer
+		timeout := time.Until(cli.retry_timestamp)
+		logger.Debugf("SND | start Retransmission timer with %d msec delay", timeout.Milliseconds())
+		cli.cancelRetryTimer()
+		cli.startRetryTimer(timeout)
+		// Change State to WAITING_FOR_ACKS
+		logger.Debugln("SND | change state to WAITING_FOR_ACKS")
+		cli.state <- WaitingForAcks
+	case RetransmissionTimeout:
+	}
 }
 
 func (cli *client) waitingForAck(event *clientEventChan) {
@@ -618,7 +724,7 @@ func (cli *client) waitingForAck(event *clientEventChan) {
 
 					destEntries = append(destEntries, entry)
 				}
-				addrPDU.init(uint16(len(*cli.fragments)),
+				addrPDU.init(Address, uint16(len(*cli.fragments)),
 					uint16(len(*cli.tx_fragments)),
 					cli.getSeqnohi(),
 					cli.msid,
@@ -638,7 +744,8 @@ func (cli *client) waitingForAck(event *clientEventChan) {
 				addrPDU.log("SND")
 				var pdu bytes.Buffer
 				addrPDU.toBuffer(&pdu)
-				cli.transport.sendCast(pdu.Bytes())
+				pduBytes := pdu.Bytes()
+				cli.transport.sendCast(&pduBytes)
 
 				if len(*cli.dest_list) > 0 {
 					if cli.trafficType == Message {

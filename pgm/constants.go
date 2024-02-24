@@ -22,4 +22,5 @@ const (
 	min_ack_info_entry_len uint16        = 24
 	ack_pdu_options_len    uint16        = 12
 	ack_info_header_len    int           = 16
+	data_pdu_header_len    int           = 24
 )

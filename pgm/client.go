@@ -69,8 +69,8 @@ func (tp *clientTransport) sendMessage(data []byte, destIPS []string) {
 }
 
 // function which sends multicast messages
-func (tp *clientTransport) sendCast(data []byte) {
-	tp.mConn.Write(data)
+func (tp *clientTransport) sendCast(data *[]byte) {
+	tp.mConn.Write(*data)
 }
 
 func (tp *clientTransport) onACKPDU(data []byte) {
