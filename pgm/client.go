@@ -107,7 +107,7 @@ func (tp *clientTransport) listenForAck() {
 		if err != nil {
 			continue
 		}
-		go tp.proceddPDU(b, srcAddr.String())
+		tp.proceddPDU(b, srcAddr.String())
 	}
 }
 

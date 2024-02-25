@@ -39,13 +39,13 @@ func (srv *server) sync() {
 		case event := <-srv.event:
 			switch srv.currState {
 			case server_Idle:
-				go srv.idle(event)
+				srv.idle(event)
 			case server_ReceivingData:
-				go srv.receivingData(event)
+				srv.receivingData(event)
 			case server_SentAck:
-				go srv.sentAck(event)
+				srv.sentAck(event)
 			default:
-				go srv.finished(event)
+				srv.finished(event)
 			}
 		}
 	}

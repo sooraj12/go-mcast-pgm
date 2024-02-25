@@ -60,15 +60,15 @@ func (cli *client) sync() {
 			// pass the event to state
 			switch cli.currState {
 			case Idle:
-				go cli.idle(event)
+				cli.idle(event)
 			case SendingData:
-				go cli.sendingData(event)
+				cli.sendingData(event)
 			case SendingExtraAddressPdu:
-				go cli.sendingExtraAddr(event)
+				cli.sendingExtraAddr(event)
 			case WaitingForAcks:
-				go cli.waitingForAck(event)
+				cli.waitingForAck(event)
 			default:
-				go cli.finished(event)
+				cli.finished(event)
 			}
 		}
 	}

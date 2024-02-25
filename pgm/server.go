@@ -97,7 +97,7 @@ func (tp *serverTransport) listerForDatagrams() {
 			continue
 		}
 		logger.Debugf("RX Received packet from %s type: %d len:%d", srcAddr.IP.String(), 2, n)
-		go tp.processPDU(b)
+		tp.processPDU(b)
 	}
 }
 
