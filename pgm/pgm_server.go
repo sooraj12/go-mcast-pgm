@@ -44,7 +44,7 @@ func (srv *server) sync() {
 				srv.receivingData(event)
 			case server_SentAck:
 				srv.sentAck(event)
-			default:
+			case server_Finished:
 				srv.finished(event)
 			}
 		}
@@ -259,7 +259,7 @@ func (srv *server) idle(ev *severEventChan) {
 			logger.Debugf("RCV | start LAST_PDU timer with a %d msec timeout", timeout.Milliseconds())
 			srv.startPDUDelayTimer(timeout)
 			// Change state to RECEIVING_DATA
-			logger.Debugln("RCV | IDLE - change state to RECEIVING_DATA")
+			logger.Debugln("RCV | IDLE - change state to RECEIVING_DATA")
 			srv.state <- server_ReceivingData
 		}
 	}
