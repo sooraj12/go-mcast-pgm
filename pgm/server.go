@@ -7,7 +7,24 @@ import (
 	"os"
 )
 
-func (tp *serverTransport) onDataPDU(data []byte) {}
+func (tp *serverTransport) onDataPDU(data []byte) {
+	datapdu := dataPDU{}
+	datapdu.fromBuffer(&data)
+
+	remoteIP := datapdu.srcIP
+	msid := datapdu.msid
+	key := uniqKey{remoteIP, msid}
+
+	if val, ok := (*tp.rx_ctx_list)[key]; ok {
+		datapdu.log("RCV")
+
+		// pass event to state machine
+		go val.sync()
+		go val.timerSync()
+
+		val.event <- &severEventChan{id: server_DataPDU, data: datapdu}
+	}
+}
 
 func (tp *serverTransport) onAddrPDU(data []byte) {
 	addressPdu := addressPDU{}

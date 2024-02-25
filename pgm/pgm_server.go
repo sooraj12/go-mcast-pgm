@@ -28,6 +28,7 @@ func (srv *server) init(msid int32, remoteIP string, tp *serverTransport) {
 	srv.tvalue = 0
 	srv.ackRetryCount = 0
 	srv.maxAddrPDULen = 0
+	srv.cwndSeqno = 0
 }
 
 func (srv *server) sync() {
@@ -135,6 +136,61 @@ func (srv *server) calculateTvalue() time.Duration {
 	return tvalue
 }
 
+func (srv *server) calcRemainingTime(remaining int, datarate float64) time.Duration {
+	if datarate == 0 {
+		datarate = default_air_datarate
+	}
+
+	msec := round(float64(1000*remaining*8) / datarate)
+	logger.Infof("RCV | Remaining Time %f msec - Payload %d bytes - AirDatarate: %f bit/s", msec, remaining, datarate)
+	return time.Duration(msec * float64(time.Millisecond))
+}
+
+func (srv *server) updateRxDatarate(seqno uint16) {
+	var datarate float64
+	var nBytes int
+
+	if srv.total > 1 {
+		remaining := srv.getRemainingFragments(seqno)
+		nBytes = (int(srv.cwnd) - remaining) * pgmConf.mtu
+	} else {
+		for _, val := range *srv.received {
+			nBytes += val
+		}
+	}
+	// calculate avg datarate since first received data pdu
+	datarate = calcGoodput(srv.startTimestamp, nBytes)
+	// weight new datarate with old datarate
+	if srv.rxDatarate == 0 {
+		srv.rxDatarate = datarate
+	}
+	datarate = avgDatarate(srv.rxDatarate, datarate)
+	// update the stored datarate
+	srv.rxDatarate = min(datarate, pgmConf.max_datarate)
+	srv.rxDatarate = max(datarate, pgmConf.min_datarate)
+
+	logger.Debugf("RCV | %s Updated RxDatarate to %f bit/s", getInterfaceIP().String(), srv.rxDatarate)
+}
+
+func (srv *server) getRemainingFragments(seqno uint16) int {
+	remaining := 0
+	if srv.total <= 0 {
+		logger.Debugf("RCV | Remaining fragment: 0 - Total number of PDUs is unkown")
+		return 0
+	}
+	// calculate the remaining number of pdus based on the total number of
+	// pdus in the current window and the already received number of pdus
+	remainingWindowNum := int(srv.cwnd) - len(*srv.received)
+	// calculate the remaining number of puds based on the sequence number
+	// of the current received pdu and the highest sequence number of the current window
+	remainingWindowSeqno := int(srv.seqnohi) - int(seqno)
+	// the smallest number will become the remaining number of pdus
+	remaining = minInt(remainingWindowNum, remainingWindowSeqno)
+	remaining = maxInt(remaining, 0)
+	logger.Debugf("RCV | Remaining: %d windowNum: %d window_seqno: %d", remaining, remainingWindowNum, remainingWindowSeqno)
+	return remaining
+}
+
 func (srv *server) sendACK(seqnohi uint16, tsval int64, tvalue int64, missed *[]uint16) {
 	ackPDU := ackPDU{}
 	ackPDU.init(seqnohi, srv.remoteIP, srv.msid, tsval, tvalue, missed)
@@ -181,10 +237,29 @@ func (srv *server) idle(ev *severEventChan) {
 			// wait random time before sending the ack pdu
 			randomNum := rand.Float64()
 			ackTimeout := round(randomNum * (float64(ack_pdu_delay_msec) * float64(len(*srv.dests))))
-			srv.mcastACKTimeout = time.Duration(time.Duration(ackTimeout) * time.Millisecond)
+			srv.mcastACKTimeout = time.Duration(ackTimeout * float64(time.Millisecond))
 			logger.Debugf("RCV | start LAST_PDU timer with a %d msec timeout", srv.mcastACKTimeout.Milliseconds())
 			srv.startPDUDelayTimer(srv.mcastACKTimeout)
 			logger.Debugf("RCV | IDLE - Change state to RECEIVING_DATA")
+			srv.state <- server_ReceivingData
+		} else {
+			// TrafficMode.Bulk - start last pdu timer
+			remainingBytes := (int(addrPDU.cwnd) + 1) * pgmConf.mtu
+			var timeout time.Duration
+			if srv.rxDatarate == 0 {
+				timeout = srv.calcRemainingTime(remainingBytes, default_air_datarate)
+			} else {
+				timeout = srv.calcRemainingTime(remainingBytes, srv.rxDatarate)
+			}
+			randomNum := rand.Float64()
+			ackTimeout := round(randomNum * (float64(len(*srv.dests)) * float64(ack_pdu_delay_msec)))
+			srv.mcastACKTimeout = time.Duration(ackTimeout * float64(time.Millisecond))
+			timeout = timeout + srv.mcastACKTimeout
+			// at multicast communication the ack pdu will be randomly delayed to avoid collision
+			logger.Debugf("RCV | start LAST_PDU timer with a %d msec timeout", timeout.Milliseconds())
+			srv.startPDUDelayTimer(timeout)
+			// Change state to RECEIVING_DATA
+			logger.Debugln("RCV | IDLE - change state to RECEIVING_DATA")
 			srv.state <- server_ReceivingData
 		}
 	}
@@ -194,6 +269,34 @@ func (srv *server) receivingData(ev *severEventChan) {
 	logger.Debugf("RCV | state_RECEIVING_DATA: %#v", ev.id)
 
 	switch ev.id {
+	case server_DataPDU:
+		srv.cancelPDUDelayTimer()
+		datapdu := ev.data.(dataPDU)
+		// save the received fragment
+		(*srv.received)[int(datapdu.seqno)] = len(*datapdu.data)
+		srv.saveFragment(datapdu.seqno, datapdu.data)
+		// update the transmission window parameters
+		srv.cwnd = datapdu.cwnd
+		srv.seqnohi = datapdu.seqnohi
+		srv.cwndSeqno = datapdu.cwndSeqno
+		// calculate rx datarate
+		srv.updateRxDatarate(datapdu.seqno)
+
+		if srv.cwnd > 0 {
+			// calculate how many data pdus are still awaited
+			remaining := srv.getRemainingFragments(datapdu.seqno)
+			logger.Debugf("RCV | %s | Received DataPDU[%d] Remaining: %d RxDatarate: %f bit/s", getInterfaceIP().String(), datapdu.seqno, remaining, srv.rxDatarate)
+			// start last pdu timer
+			remaining += 1 // additional extra address pdu
+			timeout := srv.calcRemainingTime(remaining*pgmConf.mtu, srv.rxDatarate)
+			// at multicast the ack pdu will be randomly delayed to avoid collision
+			randomNum := rand.Float64()
+			ackTimeout := round(randomNum * (float64(len(*srv.dests)) * float64(ack_pdu_delay_msec)))
+			srv.mcastACKTimeout = time.Duration(ackTimeout * float64(time.Millisecond))
+			timeout = timeout + srv.mcastACKTimeout
+			logger.Debugf("RCV | start LAST_PDU timer with a %d msec timeout", timeout)
+			srv.startPDUDelayTimer(timeout)
+		}
 	case server_LastPduTimeout:
 		srv.cancelPDUDelayTimer()
 
@@ -204,6 +307,8 @@ func (srv *server) receivingData(ev *severEventChan) {
 		timeout := time.Duration(srv.calcAckPDUTimeout() * time.Millisecond)
 		logger.Debugf("RCV | Start ACK_PDU timer with a %d msec timeout", timeout.Milliseconds())
 		srv.startACKTimer(timeout)
+		// reset rx phase
+		srv.cwnd = 0
 		// change state to sent ack
 		logger.Debugf("RCV | RECEIVING_DATA - Change state to SENT_ACK")
 		srv.state <- server_SentAck

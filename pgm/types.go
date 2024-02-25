@@ -171,6 +171,7 @@ type server struct {
 	tvalue        int64
 	ackRetryCount int
 	maxAddrPDULen uint16
+	cwndSeqno     uint16
 }
 
 type severEventChan struct {

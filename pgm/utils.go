@@ -7,6 +7,7 @@ import (
 	"math"
 	"net"
 	"os"
+	"time"
 
 	"github.com/jackpal/gateway"
 )
@@ -112,6 +113,20 @@ func maxInt64(x, y int64) int64 {
 	return x
 }
 
+func minInt(x, y int) int {
+	if x > y {
+		return y
+	}
+	return x
+}
+
+func maxInt(x, y int) int {
+	if x < y {
+		return y
+	}
+	return x
+}
+
 func round(val float64) float64 {
 	return math.Round(val*100) / 100
 }
@@ -145,4 +160,30 @@ func getSentBytes(fragments *txFragments) int {
 	}
 
 	return count
+}
+
+func calcGoodput(ts time.Time, totalBytes int) float64 {
+	var datarate float64
+	d := time.Since(ts).Milliseconds()
+	if d > 0 {
+		datarate = float64(totalBytes) * 8 * 1000 / float64(d)
+	}
+
+	logger.Infof("RCV | Datarate(): %f Received bytes: %d Interval: %d", datarate, totalBytes, d)
+
+	return round(datarate)
+}
+
+func messageLen(fr *[][]byte) (count int) {
+	count = 0
+	for _, val := range *fr {
+		count += len(val)
+	}
+	return
+}
+
+func avgDatarate(old float64, new float64) float64 {
+	avg := old * 0.50 * new * 0.50
+	logger.Infof("RCV | Avg_datarate() old: %f bit/s new: %f bit/s avg: %f bit/s", old, new, avg)
+	return round(avg)
 }

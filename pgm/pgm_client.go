@@ -427,34 +427,13 @@ func (cli *client) receivedAllAcks() bool {
 	return true
 }
 
-func (cli *client) calcGoodput() float64 {
-	var datarate float64
-	d := time.Since(cli.startTimestamp).Milliseconds()
-	receivedBytes := cli.messageLen()
-	if d > 0 {
-		datarate = float64(receivedBytes) * 8 * 1000 / float64(d)
-	}
-
-	logger.Infof("RCV | Datarate(): %f Received bytes: %d Interval: %d", datarate, receivedBytes, d)
-
-	return round(datarate)
-}
-
-func (cli *client) messageLen() (count int) {
-	count = 0
-	for _, val := range *cli.fragments {
-		count += len(val)
-	}
-	return
-}
-
 func (cli *client) getDeliveryReport() map[string]interface{} {
 	deliveryTime := time.Since(cli.startTimestamp).Milliseconds()
 	loss := 100 * (cli.num_sent_data_pdus - len(*cli.fragments)) / len(*cli.fragments)
 
 	status := map[string]interface{}{}
 	status["tx_datarate"] = cli.tx_datarate
-	status["goodput"] = cli.calcGoodput()
+	status["goodput"] = calcGoodput(cli.startTimestamp, messageLen(cli.fragments))
 	status["delivery_time"] = deliveryTime
 	status["num_data_pdus"] = len(*cli.fragments)
 	status["num_sent_data_pdus"] = cli.num_sent_data_pdus
