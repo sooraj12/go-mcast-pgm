@@ -20,7 +20,6 @@ func (tp *serverTransport) onDataPDU(data []byte) {
 
 		// pass event to state machine
 		go val.sync()
-		go val.timerSync()
 
 		val.event <- &severEventChan{id: server_DataPDU, data: datapdu}
 	}
@@ -59,7 +58,6 @@ func (tp *serverTransport) onAddrPDU(data []byte) {
 
 		// start state machine
 		go state.sync()
-		go state.timerSync()
 		// send event to state machine
 		state.event <- serverEvent
 	} else {
@@ -68,7 +66,6 @@ func (tp *serverTransport) onAddrPDU(data []byte) {
 
 		// start state machine
 		go val.sync()
-		go val.timerSync()
 		// send event to state machine
 		val.event <- serverEvent
 	}

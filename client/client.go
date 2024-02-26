@@ -8,7 +8,7 @@ import (
 
 func main() {
 	wait := &sync.WaitGroup{}
-	destIPS := []string{"192.168.1.2"}
+	destIPS := []string{"192.168.1.8"}
 	client := pgm.CreateClientProtocol()
 	wait.Add(1)
 	str := strings.Repeat("m", 1700)

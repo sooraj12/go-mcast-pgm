@@ -36,29 +36,25 @@ func (srv *server) sync() {
 		select {
 		case state := <-srv.state:
 			srv.currState = state
+		case <-srv.pduTimerChan:
+			go func() {
+				srv.event <- &severEventChan{id: server_LastPduTimeout}
+			}()
+		case <-srv.ackTimerChan:
+			go func() {
+				srv.event <- &severEventChan{id: server_AckPduTimeout}
+			}()
 		case event := <-srv.event:
 			switch srv.currState {
 			case server_Idle:
-				srv.idle(event)
+				go srv.idle(event)
 			case server_ReceivingData:
-				srv.receivingData(event)
+				go srv.receivingData(event)
 			case server_SentAck:
-				srv.sentAck(event)
+				go srv.sentAck(event)
 			case server_Finished:
-				srv.finished(event)
+				go srv.finished(event)
 			}
-		}
-	}
-}
-
-func (srv *server) timerSync() {
-	for {
-		select {
-		case <-srv.pduTimerChan:
-			srv.event <- &severEventChan{id: server_LastPduTimeout}
-		case <-srv.ackTimerChan:
-			srv.event <- &severEventChan{id: server_AckPduTimeout}
-		default:
 		}
 	}
 }

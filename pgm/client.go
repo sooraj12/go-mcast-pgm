@@ -53,8 +53,6 @@ func (tp *clientTransport) initSend(data []byte, destIPS []string, trafficType T
 	(*tp.tx_ctx_list)[msid] = state
 	// start state machine
 	go state.sync()
-	// start timer sync
-	go state.timerSync()
 	// send start event to start the state machine at idle state
 	state.event <- &clientEventChan{id: Start}
 }
@@ -89,7 +87,6 @@ func (tp *clientTransport) onACKPDU(data []byte) {
 			}
 
 			go ctx.sync()
-			go ctx.timerSync()
 			ctx.event <- &clientEventChan{id: AckPdu, data: event}
 		}
 

@@ -56,34 +56,28 @@ func (cli *client) sync() {
 		select {
 		case state := <-cli.state:
 			cli.currState = state
+		case <-cli.retry_timer_chan:
+			go func() {
+				cli.event <- &clientEventChan{id: RetransmissionTimeout}
+			}()
+		case <-cli.pdu_timer_chan:
+			go func() {
+				cli.event <- &clientEventChan{id: PduDelayTimeout}
+			}()
 		case event := <-cli.event:
 			// pass the event to state
 			switch cli.currState {
 			case Idle:
-				cli.idle(event)
+				go cli.idle(event)
 			case SendingData:
-				cli.sendingData(event)
+				go cli.sendingData(event)
 			case SendingExtraAddressPdu:
-				cli.sendingExtraAddr(event)
+				go cli.sendingExtraAddr(event)
 			case WaitingForAcks:
-				cli.waitingForAck(event)
-			default:
-				cli.finished(event)
+				go cli.waitingForAck(event)
+			case Finished:
+				go cli.finished(event)
 			}
-		}
-	}
-}
-
-func (cli *client) timerSync() {
-	for {
-		select {
-		case <-cli.retry_timer_chan:
-			cli.event <- &clientEventChan{id: RetransmissionTimeout}
-		case <-cli.pdu_timer_chan:
-			cli.event <- &clientEventChan{id: PduDelayTimeout}
-		// fixme : remove this costly default,
-		// but then the channel becomes blocking
-		default:
 		}
 	}
 }
