@@ -181,8 +181,8 @@ func (srv *server) getRemainingFragments(seqno uint16) int {
 	// of the current received pdu and the highest sequence number of the current window
 	remainingWindowSeqno := int(srv.seqnohi) - int(seqno)
 	// the smallest number will become the remaining number of pdus
-	remaining = minInt(remainingWindowNum, remainingWindowSeqno)
-	remaining = maxInt(remaining, 0)
+	remaining = min(remainingWindowNum, remainingWindowSeqno)
+	remaining = max(remaining, 0)
 	logger.Debugf("RCV | Remaining: %d windowNum: %d window_seqno: %d", remaining, remainingWindowNum, remainingWindowSeqno)
 	return remaining
 }

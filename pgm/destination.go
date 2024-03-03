@@ -115,8 +115,8 @@ func (d *destination) updateRetryTimeout(tsecr int64) {
 		logger.Debugf("TX: Ignore invalid retry_timeout of %d", retryTimeout)
 		return
 	}
-	retryTimeout = minInt64(retryTimeout, pgmConf.max_retry_timeout.Microseconds())
-	retryTimeout = maxInt64(retryTimeout, pgmConf.min_retry_timeout.Microseconds())
+	retryTimeout = min(retryTimeout, pgmConf.max_retry_timeout.Microseconds())
+	retryTimeout = max(retryTimeout, pgmConf.min_retry_timeout.Microseconds())
 	retryTimeout = (d.retry_timeout.Milliseconds() + retryTimeout) / 2
 	d.retry_timeout = time.Duration(retryTimeout)
 	logger.Debugf("TX: Updated retry_timeout for %s to %d new_retry_timeout: %d", d.dest, d.retry_timeout, retryTimeout)

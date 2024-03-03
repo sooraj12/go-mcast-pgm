@@ -85,42 +85,14 @@ func getCwnd(cwndList *[]map[string]float64, airDatarate float64, defaultAirData
 	return defaultAirDatarate
 }
 
-func min(x, y float64) float64 {
+func min[k minmax](x, y k) k {
 	if x > y {
 		return y
 	}
 	return x
 }
 
-func max(x, y float64) float64 {
-	if x < y {
-		return y
-	}
-	return x
-}
-
-func minInt64(x, y int64) int64 {
-	if x > y {
-		return y
-	}
-	return x
-}
-
-func maxInt64(x, y int64) int64 {
-	if x < y {
-		return y
-	}
-	return x
-}
-
-func minInt(x, y int) int {
-	if x > y {
-		return y
-	}
-	return x
-}
-
-func maxInt(x, y int) int {
+func max[k minmax](x, y k) k {
 	if x < y {
 		return y
 	}
